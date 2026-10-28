@@ -2,116 +2,330 @@ package com.soumya.owed
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
-import kotlinx.coroutines.launch
 import java.util.UUID
 
 class OwedVm(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
+
     var items by mutableStateOf(store.load())
+        private set
+    var alerts by mutableStateOf(store.loadAlerts())
+        private set
+    var notificationsOn by mutableStateOf(store.notificationsEnabled())
+        private set
+    var reminderHour by mutableIntStateOf(store.reminderHour())
+        private set
+    var remindDays by mutableIntStateOf(store.remindDaysBefore())
+        private set
+    var appearance by mutableStateOf(store.appearance())
+        private set
+    var banner by mutableStateOf<Banner?>(null)
+        private set
+    var pendingOpen by mutableStateOf<String?>(null)
         private set
 
     init {
-        items.forEach { Reminders.schedule(app, it) }
+        val added = syncAlerts()
+        rescheduleAll()
+        when {
+            added.size > 1 -> {
+                val overdueCount = added.count { it.kind == "overdue" }
+                if (overdueCount > 0) {
+                    val body = if (overdueCount == 1) {
+                        "1 entry is past the return date."
+                    } else {
+                        "$overdueCount entries are past the return date."
+                    }
+                    flash("Overdue", body, "overdue", null)
+                } else {
+                    flash("Coming up", "${added.size} return dates are close.", "soon", null)
+                }
+            }
+            added.size == 1 -> {
+                val alert = added.first()
+                flash(alert.title, alert.body, alert.kind, alert.entryId)
+            }
+        }
     }
 
-    private fun commit(l: List<Entry>) {
-        items = l
-        store.save(l)
-        l.forEach { Reminders.schedule(getApplication(), it) }
+    fun requestOpen(id: String?) {
+        if (!id.isNullOrBlank()) pendingOpen = id
     }
 
-    fun add(e: Entry) = commit(items + e)
-
-    fun update(e: Entry) = commit(items.map { if (it.id == e.id) e else it })
-
-    fun delete(e: Entry) {
-        Reminders.cancel(getApplication(), e)
-        commit(items.filter { it.id != e.id })
+    fun consumeOpen() {
+        pendingOpen = null
     }
+
+    fun dismissBanner() {
+        banner = null
+    }
+
+    fun flash(title: String, body: String, kind: String = "info", entryId: String? = null) {
+        banner = Banner(UUID.randomUUID().toString(), title, body, kind, entryId)
+    }
+
+    fun reloadAlerts() {
+        alerts = store.loadAlerts()
+    }
+
+    fun rescheduleAll() {
+        val ctx = getApplication<Application>()
+        items.forEach { Reminders.schedule(ctx, it) }
+    }
+
+    fun add(entry: Entry) {
+        commit(items + entry)
+        val urgent = dueSnapshot(entry)
+        if (urgent != null) {
+            pushAlert(urgent)
+            flash(urgent.title, urgent.body, urgent.kind, entry.id)
+        } else {
+            pushAlert(
+                AppAlert(
+                    id = UUID.randomUUID().toString(),
+                    entryId = entry.id,
+                    kind = "added",
+                    title = "Saved",
+                    body = "${entry.name} is on your list.",
+                    time = System.currentTimeMillis(),
+                    read = false
+                )
+            )
+            flash("Saved", "${entry.name} is on your list.", "added", entry.id)
+        }
+    }
+
+    fun update(entry: Entry) {
+        val settled = entry.isMoney && !entry.returned && entry.paid > 0 && owing(entry) <= 0.5
+        val next = if (settled) entry.copy(returned = true, returnedAt = entry.returnedAt ?: todayMs()) else entry
+        commit(items.map { if (it.id == next.id) next else it })
+        if (settled) flash("Settled", "${entry.name} is clear.", "returned", entry.id)
+        else flash("Updated", entry.name, "info", entry.id)
+    }
+
+    fun delete(entry: Entry) {
+        Reminders.cancel(getApplication(), entry)
+        commit(items.filter { it.id != entry.id })
+        flash("Deleted", "${entry.name} was removed.", "info", null)
+    }
+
+    fun recordPayment(id: String, amount: Double, note: String) {
+        if (amount <= 0) return
+        val current = items.find { it.id == id } ?: return
+        val next = applyPayment(current, UUID.randomUUID().toString(), amount, note, System.currentTimeMillis())
+        commit(items.map { if (it.id == id) next else it })
+        val settled = next.returned && !current.returned
+        if (settled) {
+            pushAlert(fresh(id, "returned", "Settled", "${current.name} is clear."))
+            flash("Settled", "${current.name} is clear.", "returned", id)
+        } else {
+            pushAlert(fresh(id, "payment", "Payment recorded", "${inr(amount)} · ${current.name}"))
+            flash("Payment recorded", "${inr(amount)} · ${current.name}", "payment", id)
+        }
+    }
+
+    fun markReturned(id: String) {
+        val current = items.find { it.id == id } ?: return
+        if (current.returned) return
+        val next = current.copy(returned = true, returnedAt = todayMs())
+        commit(items.map { if (it.id == id) next else it })
+        pushAlert(fresh(id, "returned", "Marked returned", "${current.name} is settled."))
+        flash("Returned", "${current.name} is settled.", "returned", id)
+    }
+
+    fun reopen(id: String) {
+        val current = items.find { it.id == id } ?: return
+        commit(items.map { if (it.id == id) current.copy(returned = false, returnedAt = null) else it })
+        flash("Reopened", "${current.name} is active again.", "info", id)
+    }
+
+    fun markRead(id: String) {
+        alerts = alerts.map { if (it.id == id) it.copy(read = true) else it }
+        store.saveAlerts(alerts)
+    }
+
+    fun markAllRead() {
+        alerts = alerts.map { it.copy(read = true) }
+        store.saveAlerts(alerts)
+    }
+
+    fun clearAlerts() {
+        alerts = emptyList()
+        store.saveAlerts(emptyList())
+    }
+
+    fun setNotifications(on: Boolean) {
+        notificationsOn = on
+        store.setNotificationsEnabled(on)
+        rescheduleAll()
+    }
+
+    fun setHour(hour: Int) {
+        reminderHour = hour
+        store.setReminderHour(hour)
+        rescheduleAll()
+    }
+
+    fun setLead(days: Int) {
+        remindDays = days
+        store.setRemindDaysBefore(days)
+        rescheduleAll()
+    }
+
+    fun setAppearance(value: String) {
+        if (value != "system" && value != "light" && value != "dark") return
+        appearance = value
+        store.setAppearance(value)
+    }
+
+    fun sendTest(ctx: Context) {
+        if (!notificationsOn) {
+            flash("Alerts are off", "Turn on alerts, then try again.", "soon", null)
+            return
+        }
+        val title = "Alerts are on"
+        val body = "You’ll get a reminder when a return date arrives."
+        pushAlert(fresh("", "test", title, body))
+        if (canNotify(ctx)) {
+            Reminders.notify(ctx, title, body, 42, null)
+            flash(title, body, "test", null)
+        } else {
+            flash(
+                "Allow phone alerts",
+                "Owed saved this here. Allow notifications to also see it on the lock screen.",
+                "soon",
+                null
+            )
+        }
+    }
+
+    private fun commit(list: kotlin.collections.List<Entry>) {
+        items = list
+        store.save(list)
+        rescheduleAll()
+    }
+
+    private fun pushAlert(alert: AppAlert) {
+        if (alerts.any { it.id == alert.id }) return
+        alerts = (listOf(alert) + alerts).take(80)
+        store.saveAlerts(alerts)
+    }
+
+    private fun fresh(entryId: String, kind: String, title: String, body: String) = AppAlert(
+        id = UUID.randomUUID().toString(),
+        entryId = entryId,
+        kind = kind,
+        title = title,
+        body = body,
+        time = System.currentTimeMillis(),
+        read = false
+    )
+
+    private fun dueSnapshot(entry: Entry): AppAlert? {
+        val due = entry.due ?: return null
+        if (entry.returned) return null
+        val days = daysBetween(todayMs(), due)
+        val kind = when {
+            days < 0 -> "overdue"
+            days == 0L -> "due"
+            days in 1..3 -> "soon"
+            else -> return null
+        }
+        val id = "${entry.id}:$kind:${todayMs()}"
+        if (alerts.any { it.id == id }) return null
+        return AppAlert(id, entry.id, kind, alertTitle(kind, entry), alertBody(entry), System.currentTimeMillis(), false)
+    }
+
+    private fun syncAlerts(): kotlin.collections.List<AppAlert> {
+        val today = todayMs()
+        val created = mutableListOf<AppAlert>()
+        items.filter { !it.returned && it.due != null }.forEach { entry ->
+            val due = entry.due ?: return@forEach
+            val days = daysBetween(today, due)
+            val kind = when {
+                days < 0 -> "overdue"
+                days == 0L -> "due"
+                days in 1..3 -> "soon"
+                else -> return@forEach
+            }
+            val id = "${entry.id}:$kind:$today"
+            if (alerts.any { it.id == id } || created.any { it.id == id }) return@forEach
+            created += AppAlert(id, entry.id, kind, alertTitle(kind, entry), alertBody(entry), System.currentTimeMillis(), false)
+        }
+        if (created.isNotEmpty()) {
+            alerts = (created + alerts).take(80)
+            store.saveAlerts(alerts)
+        }
+        return created
+    }
+}
+
+sealed interface Page {
+    data object Home : Page
+    data object Entries : Page
+    data object People : Page
+    data object Alerts : Page
+    data object Settings : Page
+    data class Detail(val id: String) : Page
+    data class PersonDetail(val key: String) : Page
+}
+
+enum class Tab(val label: String, val icon: ImageVector) {
+    Home("Home", Icons.Filled.Home),
+    Entries("Entries", Icons.Filled.List),
+    People("People", Icons.Filled.Person),
+    Alerts("Alerts", Icons.Filled.Notifications),
+    Settings("Settings", Icons.Filled.Settings);
+
+    fun root(): Page = when (this) {
+        Home -> Page.Home
+        Entries -> Page.Entries
+        People -> Page.People
+        Alerts -> Page.Alerts
+        Settings -> Page.Settings
+    }
+}
+
+sealed interface Sheet {
+    data class Add(val name: String = "") : Sheet
+    data class Edit(val id: String) : Sheet
+    data class Pay(val id: String) : Sheet
+    data class Delete(val id: String) : Sheet
 }
 
 class MainActivity : ComponentActivity() {
@@ -120,446 +334,193 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { OwedTheme { App(vm) } }
+        intent.getStringExtra("open")?.let { id ->
+            intent.removeExtra("open")
+            vm.requestOpen(id)
+        }
+        setContent {
+            val dark = when (vm.appearance) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemInDarkTheme()
+            }
+            OwedTheme(dark) { App(vm) }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("open")?.let { id ->
+            intent.removeExtra("open")
+            vm.requestOpen(id)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.reloadAlerts()
+        vm.rescheduleAll()
     }
 }
 
-@Composable
-fun OwedTheme(content: @Composable () -> Unit) {
-    val scheme = if (isSystemInDarkTheme()) {
-        darkColorScheme(
-            primary = Color(0xFF5B8CFF),
-            onPrimary = Color(0xFF0F1114),
-            background = Color(0xFF0F1114),
-            surface = Color(0xFF171A1F),
-            onSurface = Color(0xFFECEEF1),
-            onSurfaceVariant = Color(0xFF8B93A1),
-            outlineVariant = Color(0xFF262B33),
-            error = Color(0xFFFF6B6B),
-            surfaceContainerHigh = Color(0xFF171A1F)
-        )
-    } else {
-        lightColorScheme(
-            primary = Color(0xFF1F5EFF),
-            onPrimary = Color.White,
-            background = Color(0xFFF6F7F9),
-            surface = Color.White,
-            onSurface = Color(0xFF14171C),
-            onSurfaceVariant = Color(0xFF6B7280),
-            outlineVariant = Color(0xFFE5E7EB),
-            error = Color(0xFFC42B2B),
-            surfaceContainerHigh = Color.White
-        )
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
-}
-
-@Composable
-fun statusOf(e: Entry): Pair<String, Color> {
-    val dark = isSystemInDarkTheme()
-    val ok = if (dark) Color(0xFF3ECF9A) else Color(0xFF12805C)
-    val warn = if (dark) Color(0xFFF0A64A) else Color(0xFFB45309)
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    if (e.returned) return "Returned" to ok
-    val due = e.due ?: return "No return date" to muted
-    val d = daysBetween(todayMs(), due)
-    return when {
-        d < 0 -> "Overdue by ${-d} ${if (d == -1L) "day" else "days"}" to MaterialTheme.colorScheme.error
-        d == 0L -> "Due today" to warn
-        d <= 3 -> "Due in $d ${if (d == 1L) "day" else "days"}" to warn
-        else -> "Due in $d days" to muted
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(vm: OwedVm) {
-    val cs = MaterialTheme.colorScheme
-    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val context = LocalContext.current
+    val ios = LocalIos.current
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) perm.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-    var tab by remember { mutableIntStateOf(0) }
-    var adding by remember { mutableStateOf(false) }
-    val active = vm.items.filter { !it.returned }.sortedBy { it.due ?: Long.MAX_VALUE }
-    val done = vm.items.filter { it.returned }.sortedByDescending { it.returnedAt ?: 0L }
-    val list = if (tab == 0) active else done
-    val receive = active.filter { it.isMoney }.sumOf { owing(it) }
-    val accrued = active.sumOf { interest(it) }
-    val over = active.count { e -> e.due?.let { it < todayMs() } == true }
-
-    Scaffold(
-        containerColor = cs.background,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { adding = true },
-                containerColor = cs.primary,
-                contentColor = cs.onPrimary,
-                elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Add") }
-            )
-        }
-    ) { pad ->
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = pad.calculateTopPadding() + 16.dp,
-                bottom = pad.calculateBottomPadding() + 96.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Column {
-                    Text("Owed", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Track money and things you’ve lent",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = cs.onSurfaceVariant
-                    )
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Stat("To receive", receive, true, Modifier.weight(1f))
-                    Stat("Interest", accrued, true, Modifier.weight(1f))
-                    Stat("Overdue", over.toDouble(), false, Modifier.weight(1f))
-                }
-            }
-            item {
-                AnimatedVisibility(
-                    visible = over > 0,
-                    enter = fadeIn(tween(250)) + expandVertically(tween(250)),
-                    exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
-                ) {
-                    Surface(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = cs.surface,
-                        border = BorderStroke(1.dp, cs.error)
-                    ) {
-                        Text(
-                            "$over ${if (over == 1) "entry is" else "entries are"} past the return date.",
-                            Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = cs.error
-                        )
-                    }
-                }
-            }
-            item {
-                TabRow(
-                    selectedTabIndex = tab,
-                    containerColor = Color.Transparent,
-                    contentColor = cs.onSurface,
-                    divider = {}
-                ) {
-                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Active") })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Returned") })
-                }
-            }
-            if (list.isEmpty()) {
-                item {
-                    Text(
-                        if (tab == 0) "Nothing lent right now.\nTap Add to start." else "No returned entries yet.",
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        textAlign = TextAlign.Center,
-                        color = cs.onSurfaceVariant
-                    )
-                }
-            }
-            items(list, key = { it.id }) { e ->
-                EntryCard(
-                    e,
-                    Modifier.animateItem(),
-                    onUpdate = { vm.update(it) },
-                    onDelete = { vm.delete(e) }
-                )
-            }
+        if (Build.VERSION.SDK_INT >= 33 && !canNotify(context)) {
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
-
-    if (adding) {
-        AddSheet(onDismiss = { adding = false }, onSave = { vm.add(it); tab = 0 })
+    var encoded by rememberSaveable { mutableStateOf("home") }
+    var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
+    var scope by rememberSaveable { mutableStateOf("open") }
+    var chip by rememberSaveable { mutableStateOf("all") }
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
+    val stack = decode(encoded)
+    val tab = Tab.entries.find { it.name == tabName } ?: Tab.Home
+    fun setStack(next: kotlin.collections.List<Page>) {
+        encoded = encode(next)
     }
-}
-
-@Composable
-fun Stat(label: String, value: Double, money: Boolean, modifier: Modifier) {
-    val cs = MaterialTheme.colorScheme
-    val v by animateFloatAsState(value.toFloat(), tween(500), label = "stat")
-    Surface(
-        modifier,
-        shape = RoundedCornerShape(10.dp),
-        color = cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant)
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (money) inr(v.toDouble()) else v.toInt().toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
+    fun select(next: Tab) {
+        tabName = next.name
+        setStack(listOf(next.root()))
+    }
+    fun push(page: Page) {
+        setStack(stack + page)
+    }
+    fun pop() {
+        if (stack.size > 1) setStack(stack.dropLast(1))
+    }
+    BackHandler(enabled = stack.size > 1) { pop() }
+    LaunchedEffect(vm.pendingOpen) {
+        val id = vm.pendingOpen ?: return@LaunchedEffect
+        vm.consumeOpen()
+        if (vm.items.any { it.id == id }) {
+            tabName = Tab.Home.name
+            setStack(listOf(Page.Home, Page.Detail(id)))
         }
     }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun EntryCard(e: Entry, modifier: Modifier, onUpdate: (Entry) -> Unit, onDelete: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val ctx = LocalContext.current
-    var dlg by remember { mutableIntStateOf(0) }
-    val (label, color) = statusOf(e)
-    val lines = buildList {
-        add(if (e.isMoney) "Lent ${inr(e.amount)} on ${fmt(e.date)}" else "Given on ${fmt(e.date)}")
-        if (e.isMoney && interest(e) > 0) add("Interest ${inr(interest(e))} at ${e.rate}% / month")
-        if (e.isMoney && e.paid > 0) add("Received ${inr(e.paid)}")
-        e.due?.let { add("Return by ${fmt(it)}") }
-        if (e.note.isNotBlank()) add(e.note)
-    }
-
-    Surface(
-        modifier.animateContentSize(),
-        shape = RoundedCornerShape(12.dp),
-        color = cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant)
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text(e.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(label, style = MaterialTheme.typography.labelMedium, color = color, fontWeight = FontWeight.Medium)
-                }
-                Text(
-                    if (e.isMoney) inr(owing(e)) else e.desc,
-                    Modifier.widthIn(max = 160.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.End
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(lines.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (!e.returned) {
-                    if (e.isMoney) OutlinedButton({ dlg = 1 }) { Text("Payment") }
-                    Button({ onUpdate(e.copy(returned = true, returnedAt = todayMs())) }) { Text("Returned") }
-                    OutlinedButton({
-                        val msg = "Hi ${e.name}, a gentle reminder about " +
-                            (if (e.isMoney) inr(owing(e)) else e.desc) +
-                            (e.due?.let { " (due ${fmt(it)})" } ?: "") + ". Thank you!"
-                        ctx.startActivity(
-                            Intent.createChooser(
-                                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, msg),
-                                null
-                            )
-                        )
-                    }) { Text("Remind") }
-                } else {
-                    OutlinedButton({ onUpdate(e.copy(returned = false, returnedAt = null)) }) { Text("Reopen") }
-                }
-                TextButton({ dlg = 2 }, colors = ButtonDefaults.textButtonColors(contentColor = cs.error)) {
-                    Text("Delete")
-                }
-            }
-        }
-    }
-
-    if (dlg == 1) {
-        var v by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { dlg = 0 },
-            title = { Text("Payment received") },
-            text = {
-                OutlinedTextField(
-                    v,
-                    { v = it },
-                    label = { Text("Amount (₹)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
-            },
-            confirmButton = {
-                TextButton({
-                    val a = v.toDoubleOrNull()
-                    if (a != null && a > 0) {
-                        val u = e.copy(paid = e.paid + a)
-                        onUpdate(if (owing(u) <= 0.5) u.copy(returned = true, returnedAt = todayMs()) else u)
-                    }
-                    dlg = 0
-                }) { Text("Save") }
-            },
-            dismissButton = { TextButton({ dlg = 0 }) { Text("Cancel") } }
-        )
-    }
-
-    if (dlg == 2) {
-        AlertDialog(
-            onDismissRequest = { dlg = 0 },
-            title = { Text("Delete entry?") },
-            text = { Text("This removes ${e.name}’s entry permanently.") },
-            confirmButton = {
-                TextButton({ dlg = 0; onDelete() }, colors = ButtonDefaults.textButtonColors(contentColor = cs.error)) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = { TextButton({ dlg = 0 }) { Text("Cancel") } }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AddSheet(onDismiss: () -> Unit, onSave: (Entry) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    var money by remember { mutableStateOf(true) }
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    var rate by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    var date by remember { mutableLongStateOf(todayMs()) }
-    var due by remember { mutableStateOf<Long?>(null) }
-    var picker by remember { mutableIntStateOf(0) }
-    var err by remember { mutableStateOf("") }
-    val decimal = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = cs.surface) {
-        Column(
-            Modifier
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-                .verticalScroll(rememberScrollState())
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("New entry", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = money,
-                    onClick = { money = true },
-                    shape = SegmentedButtonDefaults.itemShape(0, 2)
-                ) { Text("Money") }
-                SegmentedButton(
-                    selected = !money,
-                    onClick = { money = false },
-                    shape = SegmentedButtonDefaults.itemShape(1, 2)
-                ) { Text("Item") }
-            }
-            OutlinedTextField(
-                name,
-                { name = it },
-                Modifier.fillMaxWidth(),
-                label = { Text("Person") },
-                singleLine = true
-            )
-            AnimatedVisibility(money, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        amount,
-                        { amount = it },
-                        Modifier.fillMaxWidth(),
-                        label = { Text("Amount (₹)") },
-                        singleLine = true,
-                        keyboardOptions = decimal
+    Box(Modifier.fillMaxSize().background(ios.groupedBg)) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (val page = stack.last()) {
+                    Page.Home -> HomeScreen(
+                        vm = vm,
+                        onAdd = { sheet = Sheet.Add() },
+                        onOpen = { push(Page.Detail(it.id)) },
+                        onEntries = { select(Tab.Entries) },
+                        onOverdue = {
+                            scope = "open"
+                            chip = "overdue"
+                            select(Tab.Entries)
+                        },
+                        onAlerts = { select(Tab.Alerts) }
                     )
-                    OutlinedTextField(
-                        rate,
-                        { rate = it },
-                        Modifier.fillMaxWidth(),
-                        label = { Text("Interest % per month (optional)") },
-                        singleLine = true,
-                        keyboardOptions = decimal
+                    Page.Entries -> EntriesScreen(
+                        vm = vm,
+                        scope = scope,
+                        chip = chip,
+                        onScope = { scope = it },
+                        onChip = { chip = it },
+                        onAdd = { sheet = Sheet.Add() },
+                        onOpen = { push(Page.Detail(it.id)) }
                     )
-                }
-            }
-            AnimatedVisibility(!money, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                OutlinedTextField(
-                    desc,
-                    { desc = it },
-                    Modifier.fillMaxWidth(),
-                    label = { Text("Item") },
-                    singleLine = true
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ picker = 1 }, Modifier.weight(1f)) { Text("Given: ${fmt(date)}", maxLines = 1) }
-                OutlinedButton({ picker = 2 }, Modifier.weight(1f)) {
-                    Text("Return: ${due?.let { fmt(it) } ?: "Set date"}", maxLines = 1)
-                }
-            }
-            OutlinedTextField(
-                note,
-                { note = it },
-                Modifier.fillMaxWidth(),
-                label = { Text("Note (optional)") },
-                singleLine = true
-            )
-            Text(err, color = cs.error, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    { scope.launch { sheet.hide() }.invokeOnCompletion { onDismiss() } },
-                    Modifier.weight(1f)
-                ) { Text("Cancel") }
-                Button({
-                    val amt = amount.toDoubleOrNull() ?: 0.0
-                    val dueV = due
-                    when {
-                        name.isBlank() -> err = "Enter a name."
-                        money && amt <= 0 -> err = "Enter a valid amount."
-                        !money && desc.isBlank() -> err = "Enter the item."
-                        dueV != null && dueV < date -> err = "Return date is before the given date."
-                        else -> {
-                            onSave(
-                                Entry(
-                                    id = UUID.randomUUID().toString(),
-                                    name = name.trim(),
-                                    isMoney = money,
-                                    amount = if (money) amt else 0.0,
-                                    desc = desc.trim(),
-                                    date = date,
-                                    due = dueV,
-                                    rate = if (money) (rate.toDoubleOrNull() ?: 0.0) else 0.0,
-                                    note = note.trim()
-                                )
-                            )
-                            scope.launch { sheet.hide() }.invokeOnCompletion { onDismiss() }
+                    Page.People -> PeopleScreen(vm, onOpen = { push(Page.PersonDetail(it.key)) })
+                    Page.Alerts -> AlertsScreen(vm) { alert ->
+                        vm.markRead(alert.id)
+                        if (alert.entryId.isNotBlank() && vm.items.any { it.id == alert.entryId }) {
+                            push(Page.Detail(alert.entryId))
+                        } else if (alert.entryId.isNotBlank()) {
+                            vm.flash("Entry removed", "That reminder is no longer on your list.", "info", null)
                         }
                     }
-                }, Modifier.weight(1f)) { Text("Save") }
+                    Page.Settings -> SettingsScreen(vm)
+                    is Page.Detail -> EntryScreen(
+                        vm = vm,
+                        id = page.id,
+                        onBack = { pop() },
+                        onEdit = { sheet = Sheet.Edit(page.id) },
+                        onPay = { sheet = Sheet.Pay(page.id) },
+                        onDelete = { sheet = Sheet.Delete(page.id) }
+                    )
+                    is Page.PersonDetail -> PersonScreen(
+                        vm = vm,
+                        key = page.key,
+                        onBack = { pop() },
+                        onAdd = { sheet = Sheet.Add(peopleOf(vm.items).find { it.key == page.key }?.name.orEmpty()) },
+                        onOpen = { push(Page.Detail(it.id)) }
+                    )
+                }
+            }
+            if (stack.size == 1) {
+                TabBar(tab, vm.alerts.count { !it.read }) { select(it) }
+            }
+        }
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+            BannerHost(vm.banner, vm::dismissBanner) { banner ->
+                val id = banner.entryId
+                if (!id.isNullOrBlank() && vm.items.any { it.id == id }) push(Page.Detail(id))
+                else select(Tab.Alerts)
+            }
+        }
+        when (val current = sheet) {
+            null -> Unit
+            is Sheet.Add -> EditorSheet(null, current.name, { sheet = null }) { vm.add(it) }
+            is Sheet.Edit -> {
+                val entry = vm.items.find { it.id == current.id }
+                if (entry == null) {
+                    LaunchedEffect(current.id) { sheet = null }
+                } else {
+                    EditorSheet(entry, "", { sheet = null }) { vm.update(it) }
+                }
+            }
+            is Sheet.Pay -> {
+                val entry = vm.items.find { it.id == current.id }
+                if (entry == null) {
+                    LaunchedEffect(current.id) { sheet = null }
+                } else {
+                    PaymentSheet(entry, { sheet = null }) { amount, note -> vm.recordPayment(entry.id, amount, note) }
+                }
+            }
+            is Sheet.Delete -> {
+                val entry = vm.items.find { it.id == current.id }
+                if (entry == null) {
+                    LaunchedEffect(current.id) { sheet = null }
+                } else {
+                    DeleteSheet(entry.name, { sheet = null }) { vm.delete(entry) }
+                }
             }
         }
     }
+}
 
-    if (picker != 0) {
-        val st = rememberDatePickerState()
-        DatePickerDialog(
-            onDismissRequest = { picker = 0 },
-            confirmButton = {
-                TextButton({
-                    st.selectedDateMillis?.let {
-                        val ms = pickerToLocal(it)
-                        if (picker == 1) date = ms else due = ms
-                    }
-                    picker = 0
-                }) { Text("OK") }
-            },
-            dismissButton = { TextButton({ picker = 0 }) { Text("Cancel") } }
-        ) { DatePicker(st) }
+private fun encode(stack: kotlin.collections.List<Page>): String = stack.joinToString("\u001f") { page ->
+    when (page) {
+        Page.Home -> "home"
+        Page.Entries -> "entries"
+        Page.People -> "people"
+        Page.Alerts -> "alerts"
+        Page.Settings -> "settings"
+        is Page.Detail -> "e:${page.id}"
+        is Page.PersonDetail -> "p:${page.key}"
     }
+}
+
+private fun decode(raw: String): kotlin.collections.List<Page> {
+    val pages = raw.split('\u001f').mapNotNull { token ->
+                    when {
+            token == "home" -> Page.Home
+            token == "entries" -> Page.Entries
+            token == "people" -> Page.People
+            token == "alerts" -> Page.Alerts
+            token == "settings" -> Page.Settings
+            token.startsWith("e:") && token.length > 2 -> Page.Detail(token.substring(2))
+            token.startsWith("p:") && token.length > 2 -> Page.PersonDetail(token.substring(2))
+            else -> null
+        }
+    }
+    return pages.ifEmpty { listOf(Page.Home) }
 }
