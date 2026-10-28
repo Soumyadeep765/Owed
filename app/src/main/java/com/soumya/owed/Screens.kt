@@ -418,7 +418,7 @@ fun SettingsScreen(vm: OwedVm) {
             Group {
                 listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEachIndexed { index, (id, label) ->
                     if (index > 0) Hairline()
-                    CheckRow(label, vm.appearance == id) { vm.setAppearance(id) }
+                    CheckRow(label, vm.appearance == id) { vm.changeAppearance(id) }
                 }
             }
         }
