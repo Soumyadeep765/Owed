@@ -124,7 +124,13 @@ object Reminders {
             cancel(ctx, e)
             return
         }
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent(ctx, e, PendingIntent.FLAG_UPDATE_CURRENT))
+        intent(ctx, e, PendingIntent.FLAG_UPDATE_CURRENT)?.let { pendingIntent ->
+    am.setAndAllowWhileIdle(
+        AlarmManager.RTC_WAKEUP,
+        at,
+        pendingIntent
+    )
+}
     }
 
     fun cancel(ctx: Context, e: Entry) {
