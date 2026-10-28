@@ -208,7 +208,7 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         rescheduleAll()
     }
 
-    fun setAppearance(value: String) {
+    fun changeAppearance(value: String) {
         if (value != "system" && value != "light" && value != "dark") return
         appearance = value
         store.setAppearance(value)
