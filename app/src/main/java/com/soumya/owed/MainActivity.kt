@@ -848,7 +848,7 @@ fun App(vm: OwedVm) {
                 if (entry == null) {
                     LaunchedEffect(current.id) { sheet = null }
                 } else {
-                    EditorSheet(entry, "", { sheet = null }) { vm.update(it) }
+                    EditorSheet(entry, "", onDismiss = { sheet = null }) { vm.update(it) }
                 }
             }
             is Sheet.Pay -> {
