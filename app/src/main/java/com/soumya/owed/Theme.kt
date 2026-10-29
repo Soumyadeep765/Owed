@@ -461,7 +461,6 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
             }
         }
     }
-}
 
 fun Modifier.stretchOverscroll(): Modifier = composed {
     var pull by remember { mutableFloatStateOf(0f) }

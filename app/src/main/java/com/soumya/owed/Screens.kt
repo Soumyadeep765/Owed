@@ -2,12 +2,18 @@
 
 package com.soumya.owed
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.ContactsContract
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -449,9 +455,73 @@ fun SettingsScreen(vm: OwedVm) {
                 }
             }
         }
-        item { SectionLabel(t("Data")) }
+        item { SectionLabel(t("Privacy")) }
         item {
             Group {
+                SwitchRow(
+                    t("Phone lock"),
+                    t("Face, fingerprint, or PIN before balances show"),
+                    vm.lockOn
+                ) { on ->
+                    if (on && !phoneLockReady(ctx)) {
+                        vm.flash(
+                            t("Phone lock"),
+                            t("Set a screen lock in phone settings first."),
+                            "soon",
+                            null
+                        )
+                    } else {
+                        vm.setLock(on)
+                    }
+                }
+            }
+        }
+        item { SectionLabel(t("Data")) }
+        item {
+            val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+                if (uri == null) return@rememberLauncherForActivityResult
+                val wrote = try {
+                    ctx.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(vm.backup().toByteArray(Charsets.UTF_8))
+                    }
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+                if (wrote) {
+                    vm.flash(t("Backup saved"), t("Keep this file. You can restore it on this phone or another."), "info", null)
+                } else {
+                    vm.flash(t("Couldn’t save"), t("The backup file was not written."), "soon", null)
+                }
+            }
+            val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri == null) return@rememberLauncherForActivityResult
+                val raw = try {
+                    ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                } catch (_: Exception) {
+                    null
+                }
+                if (raw != null && vm.restore(raw)) {
+                    vm.flash(t("Restored"), t("Your entries are back."), "added", null)
+                } else {
+                    vm.flash(t("Couldn’t restore"), t("That file is not an Owed backup."), "soon", null)
+                }
+            }
+            Group {
+                NavRow(
+                    t("Save a backup"),
+                    leading = { TintIcon(Icons.Filled.Share, ios.blue) },
+                    chevron = true,
+                    onClick = { saveBackup.launch("owed-backup.json") }
+                )
+                Hairline()
+                NavRow(
+                    t("Restore a backup"),
+                    leading = { TintIcon(Icons.Filled.Info, ios.green) },
+                    chevron = true,
+                    onClick = { openBackup.launch(arrayOf("application/json", "text/plain", "*/*")) }
+                )
+                Hairline()
                 NavRow(
                     t("Share summary"),
                     leading = { TintIcon(Icons.Filled.Share, ios.blue) },
@@ -765,11 +835,13 @@ fun PersonScreen(
 fun EditorSheet(
     existing: Entry?,
     presetName: String,
+    presetLent: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (Entry) -> Unit
 ) {
     val ios = LocalIos.current
-    var lent by remember { mutableStateOf((existing?.direction ?: LENT) == LENT) }
+    val ctx = LocalContext.current
+    var lent by remember { mutableStateOf(if (existing != null) existing.direction == LENT else presetLent) }
     var money by remember { mutableStateOf(existing?.isMoney ?: true) }
     var name by remember { mutableStateOf(existing?.name ?: presetName) }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
@@ -790,6 +862,52 @@ fun EditorSheet(
     var closing by remember { mutableStateOf(false) }
     val dismisser = remember { mutableStateOf<() -> Unit>({ onDismiss() }) }
     val decimal = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+    fun readContact(uri: Uri) {
+        val found = try {
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val nameIdx = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+            val idIdx = cursor.getColumnIndex(ContactsContract.Contacts._ID)
+            val picked = if (nameIdx >= 0) cursor.getString(nameIdx).orEmpty() else ""
+            val id = if (idIdx >= 0) cursor.getString(idIdx) else null
+            var number = ""
+            if (!id.isNullOrBlank() && ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                ctx.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                    arrayOf(id),
+                    null
+                )?.use { phones ->
+                    if (phones.moveToFirst()) number = phones.getString(0).orEmpty()
+                }
+            }
+            picked to number
+        }
+        } catch (_: Exception) {
+            null
+        }
+        if (found == null || found.first.isBlank()) {
+            err = t("Allow contacts to fill in the name.")
+        } else {
+            name = found.first
+            if (found.second.isNotBlank()) phone = found.second
+            err = ""
+        }
+    }
+    val pickContact = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
+        if (uri != null) readContact(uri)
+    }
+    val askContacts = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) pickContact.launch(null) else err = t("Allow contacts to fill in the name.")
+    }
+    fun chooseContact() {
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            pickContact.launch(null)
+        } else {
+            askContacts.launch(Manifest.permission.READ_CONTACTS)
+        }
+    }
     fun close(save: Entry?) {
         if (closing) return
         closing = true
@@ -829,6 +947,16 @@ fun EditorSheet(
             Spacer(Modifier.height(16.dp))
             Group {
                 InputRow("Person", name, { name = it }, "Name")
+                Hairline()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { chooseContact() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(t("Contacts"), color = ios.blue, fontSize = 17.sp)
+                }
                 Hairline()
                 InputRow("Phone", phone, { phone = it }, "Optional", KeyboardOptions(keyboardType = KeyboardType.Phone))
             }

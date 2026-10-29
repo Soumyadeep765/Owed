@@ -21,7 +21,7 @@ import java.util.Locale
 
 const val LENT = 0
 const val BORROWED = 1
-const val APP_VERSION = "1.1"
+const val APP_VERSION = "1.2"
 const val DEV_NAME = "Soumyadeep Das"
 const val DEV_EMAIL = "soumyadeepdas765@gmail.com"
 const val DEV_GITHUB = "https://github.com/Soumyadeep765/Owed"
@@ -299,7 +299,7 @@ fun canExact(ctx: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= 31) am.canScheduleExactAlarms() else true
 }
 
-class Store(ctx: Context) {
+class Store(private val ctx: Context) {
     private val p = ctx.getSharedPreferences("owed", Context.MODE_PRIVATE)
 
     fun load(): List<Entry> {
@@ -350,6 +350,7 @@ class Store(ctx: Context) {
             )
         }
         p.edit().putString("entries", array.toString()).apply()
+        BalanceWidget.update(ctx)
     }
 
     fun loadAlerts(): List<AppAlert> {
@@ -444,6 +445,59 @@ class Store(ctx: Context) {
     fun setIntroSeen() {
         p.edit().putBoolean("intro", true).apply()
     }
+
+    fun lockEnabled(): Boolean = p.getBoolean("lock", false)
+
+    fun setLockEnabled(on: Boolean) {
+        p.edit().putBoolean("lock", on).apply()
+    }
+
+    fun backupJson(): String {
+        return JSONObject()
+            .put("app", "owed")
+            .put("version", 1)
+            .put("entries", JSONArray(p.getString("entries", "[]")))
+            .put("alerts", JSONArray(p.getString("alerts", "[]")))
+            .put("notify", notificationsEnabled())
+            .put("hour", reminderHour())
+            .put("lead", remindDaysBefore())
+            .put("appearance", appearance())
+            .put("lang", language())
+            .put("currency", currency())
+            .put("lock", lockEnabled())
+            .toString()
+    }
+
+    fun restoreJson(raw: String): Boolean {
+        val root = try {
+            JSONObject(raw)
+        } catch (_: Exception) {
+            return false
+        }
+        if (root.optString("app") != "owed") return false
+        val entries = root.optJSONArray("entries") ?: return false
+        for (i in 0 until entries.length()) {
+            val row = entries.optJSONObject(i) ?: return false
+            if (entryFrom(row) == null) return false
+        }
+        val lang = root.optString("lang", language())
+        val money = root.optString("currency", currency())
+        val look = root.optString("appearance", appearance())
+        val lead = root.optInt("lead", 1).let { if (it == 0 || it == 1 || it == 3) it else 1 }
+        p.edit()
+            .putString("entries", entries.toString())
+            .putString("alerts", (root.optJSONArray("alerts") ?: JSONArray()).toString())
+            .putBoolean("notify", root.optBoolean("notify", true))
+            .putInt("hour", root.optInt("hour", 9).coerceIn(0, 23))
+            .putInt("lead", lead)
+            .putString("appearance", look.takeIf { it == "light" || it == "dark" || it == "system" } ?: "system")
+            .putString("lang", lang.takeIf { code -> Languages.any { it.code == code } } ?: "en")
+            .putString("currency", money.takeIf { code -> Currencies.any { it.code == code } } ?: "INR")
+            .putBoolean("lock", root.optBoolean("lock", lockEnabled()))
+            .apply()
+        BalanceWidget.update(ctx)
+        return true
+    }
 }
 
 private fun entryFrom(o: JSONObject): Entry? {
@@ -511,6 +565,8 @@ object Reminders {
 
     fun notify(ctx: Context, title: String, body: String, notifyId: Int, openId: String?) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        LocaleHub.lang = Store(ctx).language()
+        LocaleHub.currency = Store(ctx).currency()
         val channel = NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Return dates and overdue alerts"
             enableVibration(true)
@@ -530,7 +586,7 @@ object Reminders {
             .setContentTitle("Owed reminder")
             .setContentText("You have a return reminder")
             .build()
-        val notification = Notification.Builder(ctx, CHANNEL)
+        val builder = Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
             .setContentText(body)
@@ -542,7 +598,22 @@ object Reminders {
             .setPublicVersion(publicVersion)
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)
-            .build()
+        if (!openId.isNullOrBlank()) {
+            val settle = PendingIntent.getBroadcast(
+                ctx,
+                openId.hashCode() xor 0x51E,
+                Intent(ctx, SettleReceiver::class.java).putExtra("id", openId),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.checkbox_on_background,
+                    t("Settled"),
+                    settle
+                ).build()
+            )
+        }
+        val notification = builder.build()
         try {
             nm.notify(notifyId, notification)
         } catch (_: SecurityException) {

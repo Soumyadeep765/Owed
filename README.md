@@ -14,6 +14,12 @@ You can track both directions, record payments, group people, and get a reminder
 - Languages, including Hinglish
 - Light, dark, and system appearance
 - Data kept in on-device storage
+- Backup file you can save and restore
+- Home screen widget for the two balances
+- Phone lock before the balances show
+- Pick a person from contacts
+- Settle a reminder from the notification
+- Home screen shortcuts for lent and borrowed
 
 ## Requirements
 
@@ -28,7 +34,9 @@ gradle assembleDebug
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
-GitHub Actions builds the same debug APK on every push and uploads it as an artifact.
+Debug and release builds are signed with `app/owed-upload.p12` (alias `owed`). GitHub Actions uses that same key, so raising `versionCode` in `app/build.gradle.kts` lets a new APK install over the previous one. This key is in the repository so the builds stay updatable. It is not a private Play upload key.
+
+If a phone already has an older Owed APK from a GitHub run that used a one-off debug key, uninstall that copy once. After that, later builds update in place.
 
 ## Privacy
 

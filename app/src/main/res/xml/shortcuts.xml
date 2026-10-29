@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="lent"
+        android:enabled="true"
+        android:icon="@drawable/ic_logo"
+        android:shortcutShortLabel="@string/shortcut_lent"
+        android:shortcutLongLabel="@string/shortcut_lent">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.soumya.owed"
+            android:targetClass="com.soumya.owed.MainActivity">
+            <extra android:name="add" android:value="lent" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="borrowed"
+        android:enabled="true"
+        android:icon="@drawable/ic_logo"
+        android:shortcutShortLabel="@string/shortcut_borrowed"
+        android:shortcutLongLabel="@string/shortcut_borrowed">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.soumya.owed"
+            android:targetClass="com.soumya.owed.MainActivity">
+            <extra android:name="add" android:value="borrowed" />
+        </intent>
+    </shortcut>
+</shortcuts>

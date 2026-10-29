@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_lent">Lent</string>
+    <string name="shortcut_borrowed">Borrowed</string>
+    <string name="widget_desc">What is owed to you, and what you owe</string>
+</resources>

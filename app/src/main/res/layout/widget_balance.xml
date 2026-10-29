@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/widget_brand"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Owed"
+        android:textColor="#8E8E93"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_to_you_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Owed to you"
+                android:textColor="#8E8E93"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/widget_to_you"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#007AFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_you_owe_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="You owe"
+                android:textColor="#8E8E93"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/widget_you_owe"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FF3B30"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_open"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="#8E8E93"
+        android:textSize="12sp" />
+</LinearLayout>

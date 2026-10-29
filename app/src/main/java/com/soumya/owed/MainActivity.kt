@@ -1,12 +1,17 @@
 package com.soumya.owed
 
 import android.Manifest
+import android.app.Activity
 import android.app.Application
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.hardware.biometrics.BiometricManager
+import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,14 +28,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.using
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,14 +64,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import java.util.UUID
 
 class OwedVm(app: Application) : AndroidViewModel(app) {
@@ -91,6 +105,14 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
     var banner by mutableStateOf<Banner?>(null)
         private set
     var pendingOpen by mutableStateOf<String?>(null)
+        private set
+    var pendingAdd by mutableStateOf<Int?>(null)
+        private set
+    var lockOn by mutableStateOf(store.lockEnabled())
+        private set
+    var sessionOpen by mutableStateOf(!store.lockEnabled())
+        private set
+    var prompting by mutableStateOf(false)
         private set
 
     init {
@@ -125,6 +147,60 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
 
     fun consumeOpen() {
         pendingOpen = null
+    }
+
+    fun requestAdd(direction: Int) {
+        pendingAdd = if (direction == BORROWED) BORROWED else LENT
+    }
+
+    fun consumeAdd() {
+        pendingAdd = null
+    }
+
+    fun reload() {
+        items = store.load()
+        alerts = store.loadAlerts()
+        lockOn = store.lockEnabled()
+    }
+
+    fun setLock(on: Boolean) {
+        lockOn = on
+        store.setLockEnabled(on)
+        if (!on) sessionOpen = true
+    }
+
+    fun notePrompt(active: Boolean) {
+        prompting = active
+    }
+
+    fun unlock() {
+        prompting = false
+        sessionOpen = true
+    }
+
+    fun relock() {
+        if (lockOn && !prompting) sessionOpen = false
+    }
+
+    fun backup(): String = store.backupJson()
+
+    fun restore(raw: String): Boolean {
+        if (!store.restoreJson(raw)) return false
+        items = store.load()
+        alerts = store.loadAlerts()
+        notificationsOn = store.notificationsEnabled()
+        reminderHour = store.reminderHour()
+        remindDays = store.remindDaysBefore()
+        appearance = store.appearance()
+        language = store.language()
+        currency = store.currency()
+        lockOn = store.lockEnabled()
+        LocaleHub.lang = language
+        LocaleHub.currency = currency
+        java.util.Locale.setDefault(localeFor(language))
+        if (!lockOn) sessionOpen = true
+        rescheduleAll()
+        return true
     }
 
     fun dismissBanner() {
@@ -378,7 +454,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 sealed interface Sheet {
-    data class Add(val name: String = "") : Sheet
+    data class Add(val name: String = "", val direction: Int = LENT) : Sheet
     data class Edit(val id: String) : Sheet
     data class Pay(val id: String) : Sheet
     data class Delete(val id: String) : Sheet
@@ -400,10 +476,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        intent.getStringExtra("open")?.let { id ->
-            intent.removeExtra("open")
-            vm.requestOpen(id)
-        }
+        readLaunch(intent)
         setContent {
             val dark = when (vm.appearance) {
                 "light" -> false
@@ -415,6 +488,7 @@ class MainActivity : ComponentActivity() {
                 OwedTheme(dark) {
                     Box(Modifier.fillMaxSize()) {
                         App(vm)
+                        if (vm.lockOn && !vm.sessionOpen) LockScreen(vm)
                         SplashFade()
                     }
                 }
@@ -425,16 +499,30 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra("open")?.let { id ->
-            intent.removeExtra("open")
-            vm.requestOpen(id)
-        }
+        readLaunch(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        vm.reloadAlerts()
+        vm.reload()
         vm.rescheduleAll()
+        BalanceWidget.update(this)
+    }
+
+    override fun onStop() {
+        vm.relock()
+        super.onStop()
+    }
+
+    private fun readLaunch(intent: Intent?) {
+        intent?.getStringExtra("open")?.let { id ->
+            intent.removeExtra("open")
+            vm.requestOpen(id)
+        }
+        intent?.getStringExtra("add")?.let { which ->
+            intent.removeExtra("add")
+            vm.requestAdd(if (which == "borrowed") BORROWED else LENT)
+        }
     }
 }
 
@@ -472,6 +560,106 @@ private fun SplashFade() {
             }
         }
     }
+}
+
+fun phoneLockReady(ctx: Context): Boolean {
+    val km = ctx.getSystemService(KeyguardManager::class.java)
+    return km?.isDeviceSecure == true
+}
+
+@Composable
+private fun LockScreen(vm: OwedVm) {
+    val ctx = LocalContext.current
+    val ios = LocalIos.current
+    val credential = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        vm.notePrompt(false)
+        if (result.resultCode == Activity.RESULT_OK) vm.unlock()
+    }
+    fun ask() {
+        if (Build.VERSION.SDK_INT >= 29 && biometricReady(ctx)) {
+            vm.notePrompt(true)
+            val executor = ContextCompat.getMainExecutor(ctx)
+            val prompt = BiometricPrompt.Builder(ctx)
+                .setTitle(t("Unlock Owed"))
+                .setSubtitle(t("Use your phone lock"))
+            if (Build.VERSION.SDK_INT >= 30) {
+                prompt.setAllowedAuthenticators(
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                )
+            } else {
+                prompt.setNegativeButton(t("Cancel"), executor) { _, _ -> vm.notePrompt(false) }
+            }
+            prompt.build().authenticate(
+                CancellationSignal(),
+                executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        vm.unlock()
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        vm.notePrompt(false)
+                    }
+                }
+            )
+        } else {
+            val km = ctx.getSystemService(KeyguardManager::class.java)
+            @Suppress("DEPRECATION")
+            val intent = km?.createConfirmDeviceCredentialIntent(t("Unlock Owed"), t("Use your phone lock"))
+            if (intent != null) {
+                vm.notePrompt(true)
+                credential.launch(intent)
+            } else {
+                vm.setLock(false)
+            }
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { ask() }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(ios.groupedBg)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Box(
+                Modifier.size(88.dp).clip(CircleShape).background(ios.blue),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(46.dp).clip(CircleShape).background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(ios.blue))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(t("Owed is locked"), color = ios.label, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(t("Use your phone lock"), color = ios.secondary, fontSize = 15.sp)
+            Spacer(Modifier.height(24.dp))
+            PrimaryButton(t("Unlock"), { ask() }, Modifier.padding(horizontal = 32.dp))
+        }
+    }
+}
+
+private fun biometricReady(ctx: Context): Boolean {
+    val mgr = ctx.getSystemService(BiometricManager::class.java) ?: return false
+    val result = if (Build.VERSION.SDK_INT >= 30) {
+        mgr.canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        mgr.canAuthenticate()
+    }
+    return result == BiometricManager.BIOMETRIC_SUCCESS
 }
 
 @Composable
@@ -515,6 +703,12 @@ fun App(vm: OwedVm) {
         }
     }
     BackHandler(enabled = stack.size > 1) { pop() }
+    LaunchedEffect(vm.pendingAdd, vm.introSeen) {
+        if (!vm.introSeen) return@LaunchedEffect
+        val direction = vm.pendingAdd ?: return@LaunchedEffect
+        vm.consumeAdd()
+        sheet = Sheet.Add(direction = direction)
+    }
     LaunchedEffect(vm.pendingOpen) {
         val id = vm.pendingOpen ?: return@LaunchedEffect
         vm.consumeOpen()
@@ -559,7 +753,9 @@ fun App(vm: OwedVm) {
                                 (slideOutHorizontally(tween(200, easing = easing)) { it } + fadeOut(tween(140)))
                             else -> fadeIn(tween(140)) togetherWith fadeOut(tween(90))
                         }
-                        change.apply { targetContentZIndex = if (motion == -1) 0f else 1f } using null
+                        (change.apply {
+                            targetContentZIndex = if (motion == -1) 0f else 1f
+                        }) using null
                     },
                     label = "page"
                 ) { current ->
@@ -640,7 +836,13 @@ fun App(vm: OwedVm) {
         }
         when (val current = sheet) {
             null -> Unit
-            is Sheet.Add -> EditorSheet(null, current.name, { sheet = null }) { vm.add(it) }
+            is Sheet.Add -> EditorSheet(
+                existing = null,
+                presetName = current.name,
+                presetLent = current.direction == LENT,
+                onDismiss = { sheet = null },
+                onSave = { vm.add(it) }
+            )
             is Sheet.Edit -> {
                 val entry = vm.items.find { it.id == current.id }
                 if (entry == null) {
