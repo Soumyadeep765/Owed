@@ -5,8 +5,11 @@ import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,9 +21,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,7 +36,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,6 +53,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -74,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -86,6 +96,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -246,15 +259,18 @@ fun rememberTap(): () -> Unit {
 fun LargeTitlePage(
     title: String,
     trailing: (@Composable () -> Unit)? = null,
+    bottom: Dp = 28.dp,
     content: LazyListScope.() -> Unit
 ) {
     val ios = LocalIos.current
     val list = rememberLazyListState()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val collapsed by remember {
-        derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 28 }
+    val fraction by remember {
+        derivedStateOf {
+            if (list.firstVisibleItemIndex > 0) 1f
+            else (list.firstVisibleItemScrollOffset / 48f).coerceIn(0f, 1f)
+        }
     }
-    val titleAlpha by animateFloatAsState(if (collapsed) 1f else 0f, tween(160), label = "bar")
     Column(Modifier.fillMaxSize().background(ios.groupedBg)) {
         Box(Modifier.fillMaxWidth().height(top + 44.dp).background(ios.groupedBg)) {
             Text(
@@ -262,8 +278,9 @@ fun LargeTitlePage(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 12.dp, start = 88.dp, end = 88.dp)
-                    .fillMaxWidth(),
-                color = ios.label.copy(alpha = titleAlpha),
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = fraction },
+                color = ios.label,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
@@ -275,20 +292,19 @@ fun LargeTitlePage(
                     trailing()
                 }
             }
-            if (collapsed) {
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(ios.separator)
-                )
-            }
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .graphicsLayer { alpha = fraction }
+                    .background(ios.separator)
+            )
         }
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 28.dp)
+            contentPadding = PaddingValues(bottom = bottom)
         ) {
             item {
                 Text(
@@ -315,16 +331,21 @@ fun NavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)
             Row(
                 Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable {
                         tap()
                         onBack()
                     }
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(start = 8.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("‹", color = ios.blue, fontSize = 28.sp, fontWeight = FontWeight.Normal)
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = ios.blue,
+                    modifier = Modifier.size(22.dp)
+                )
                 Text("Back", color = ios.blue, fontSize = 17.sp)
             }
             Text(
@@ -354,62 +375,93 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
     val tap = rememberTap()
     Column(Modifier.fillMaxWidth().background(ios.tabBar)) {
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(ios.separator))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp, bottom = bottom + 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Tab.entries.forEach { tab ->
-                val on = tab == selected
-                Column(
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = bottom)) {
+            val count = Tab.entries.size.coerceAtLeast(1)
+            val tabWidth = maxWidth / count
+            val index = Tab.entries.indexOf(selected).coerceAtLeast(0)
+            val x by animateDpAsState(
+                tabWidth * index,
+                spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+                label = "tab"
+            )
+            Box(Modifier.fillMaxWidth().height(52.dp)) {
+                Box(
                     Modifier
-                        .weight(1f)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            tap()
-                            onSelect(tab)
-                        }
-                        .padding(vertical = 2.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box {
-                        Icon(
-                            tab.icon,
-                            contentDescription = tab.label,
-                            tint = if (on) ios.blue else ios.secondary,
-                            modifier = Modifier.size(24.dp)
+                        .offset(x = x)
+                        .width(tabWidth)
+                        .height(52.dp)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .background(ios.blue.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+                )
+                Row(Modifier.fillMaxWidth().height(52.dp)) {
+                    Tab.entries.forEach { tab ->
+                        val on = tab == selected
+                        val press = remember(tab) { MutableInteractionSource() }
+                        val pressed by press.collectIsPressedAsState()
+                        val scale by animateFloatAsState(
+                            when {
+                                pressed -> 0.86f
+                                on -> 1.08f
+                                else -> 1f
+                            },
+                            spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            label = "tap"
                         )
-                        if (tab == Tab.Alerts && unread > 0) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 7.dp, y = (-5).dp)
-                                    .height(16.dp)
-                                    .widthIn(min = 16.dp)
-                                    .background(ios.red, CircleShape)
-                                    .padding(horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    if (unread > 9) "9+" else unread.toString(),
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    lineHeight = 12.sp
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                                .clickable(interactionSource = press, indication = null) {
+                                    tap()
+                                    onSelect(tab)
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box {
+                                Icon(
+                                    tab.icon,
+                                    contentDescription = tab.label,
+                                    tint = if (on) ios.blue else ios.secondary,
+                                    modifier = Modifier.size(24.dp)
                                 )
+                                if (tab == Tab.Alerts && unread > 0) {
+                                    Box(
+                                        Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 7.dp, y = (-5).dp)
+                                            .height(16.dp)
+                                            .widthIn(min = 16.dp)
+                                            .background(ios.red, CircleShape)
+                                            .padding(horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            if (unread > 9) "9+" else unread.toString(),
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            lineHeight = 12.sp
+                                        )
+                                    }
+                                }
                             }
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                tab.label,
+                                color = if (on) ios.blue else ios.secondary,
+                                fontSize = 10.sp,
+                                fontWeight = if (on) FontWeight.Medium else FontWeight.Normal
+                            )
                         }
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        tab.label,
-                        color = if (on) ios.blue else ios.secondary,
-                        fontSize = 10.sp,
-                        fontWeight = if (on) FontWeight.Medium else FontWeight.Normal
-                    )
                 }
             }
         }
@@ -417,21 +469,96 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
 }
 
 @Composable
-fun PlusButton(onClick: () -> Unit) {
+fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val ios = LocalIos.current
     val tap = rememberTap()
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) 0.9f else 1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "fab"
+    )
     Box(
-        Modifier
-            .size(32.dp)
+        modifier
+            .size(56.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(8.dp, CircleShape)
             .clip(CircleShape)
             .background(ios.blue)
-            .clickable {
+            .clickable(interactionSource = press, indication = null) {
                 tap()
                 onClick()
             },
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Filled.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(Icons.Filled.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+fun FastSheet(
+    onDismiss: () -> Unit,
+    container: Color = LocalIos.current.groupedBg,
+    handle: Boolean = true,
+    sheetContent: @Composable ColumnScope.() -> Unit
+) {
+    val ios = LocalIos.current
+    var shown by remember { mutableStateOf(false) }
+    val scrim by animateFloatAsState(if (shown) 1f else 0f, tween(160), label = "scrim")
+    LaunchedEffect(Unit) { shown = true }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.setWindowAnimations(0)
+        }
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = scrim }
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onDismiss() }
+            )
+            AnimatedVisibility(
+                visible = shown,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(140)),
+                exit = slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(120))
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .background(container)
+                        .navigationBarsPadding()
+                        .imePadding(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    content = {
+                        if (handle) {
+                            Box(
+                                Modifier
+                                    .padding(top = 8.dp, bottom = 4.dp)
+                                    .width(36.dp)
+                                    .height(5.dp)
+                                    .clip(CircleShape)
+                                    .background(ios.tertiary)
+                            )
+                        }
+                        sheetContent()
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -510,17 +637,39 @@ fun Avatar(name: String, size: Dp) {
 @Composable
 fun IosSearch(value: String, onValue: (String) -> Unit, placeholder: String = "Search") {
     val ios = LocalIos.current
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val open = focused || value.isNotEmpty()
+    val height by animateDpAsState(
+        if (open) 44.dp else 36.dp,
+        tween(220, easing = FastOutSlowInEasing),
+        label = "searchH"
+    )
+    val radius by animateDpAsState(if (focused) 14.dp else 10.dp, tween(220), label = "searchR")
+    val lift by animateDpAsState(if (focused) 6.dp else 0.dp, tween(220), label = "searchS")
+    val icon by animateDpAsState(if (focused) 20.dp else 18.dp, tween(220), label = "searchI")
     Row(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(ios.fill)
-            .padding(horizontal = 8.dp),
+            .height(height)
+            .shadow(lift, RoundedCornerShape(radius))
+            .clip(RoundedCornerShape(radius))
+            .background(if (focused) ios.card else ios.fill)
+            .border(
+                if (focused) 1.5.dp else 0.dp,
+                ios.blue.copy(alpha = if (focused) 0.85f else 0f),
+                RoundedCornerShape(radius)
+            )
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.Search, contentDescription = null, tint = ios.secondary, modifier = Modifier.size(18.dp))
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = null,
+            tint = if (focused) ios.blue else ios.secondary,
+            modifier = Modifier.size(icon)
+        )
         Spacer(Modifier.width(6.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
@@ -532,10 +681,11 @@ fun IosSearch(value: String, onValue: (String) -> Unit, placeholder: String = "S
                 singleLine = true,
                 textStyle = TextStyle(color = ios.label, fontSize = 17.sp),
                 cursorBrush = SolidColor(ios.blue),
+                interactionSource = interaction,
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        if (value.isNotEmpty()) {
+        AnimatedVisibility(visible = value.isNotEmpty(), enter = fadeIn(tween(140)), exit = fadeOut(tween(100))) {
             Icon(
                 Icons.Filled.Close,
                 contentDescription = "Clear",

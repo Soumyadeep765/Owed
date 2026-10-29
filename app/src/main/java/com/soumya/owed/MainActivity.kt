@@ -13,12 +13,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -35,7 +47,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.AndroidViewModel
 import java.util.UUID
@@ -380,34 +394,68 @@ fun App(vm: OwedVm) {
     var scope by rememberSaveable { mutableStateOf("open") }
     var chip by rememberSaveable { mutableStateOf("all") }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    var motion by remember { mutableIntStateOf(0) }
+    var slide by remember { mutableIntStateOf(1) }
     val stack = decode(encoded)
     val tab = Tab.entries.find { it.name == tabName } ?: Tab.Home
     fun setStack(next: kotlin.collections.List<Page>) {
         encoded = encode(next)
     }
     fun select(next: Tab) {
+        slide = next.ordinal - tab.ordinal
+        motion = 0
         tabName = next.name
         setStack(listOf(next.root()))
     }
     fun push(page: Page) {
+        slide = 1
+        motion = 1
         setStack(stack + page)
     }
     fun pop() {
-        if (stack.size > 1) setStack(stack.dropLast(1))
+        if (stack.size > 1) {
+            slide = -1
+            motion = -1
+            setStack(stack.dropLast(1))
+        }
     }
     BackHandler(enabled = stack.size > 1) { pop() }
     LaunchedEffect(vm.pendingOpen) {
         val id = vm.pendingOpen ?: return@LaunchedEffect
         vm.consumeOpen()
         if (vm.items.any { it.id == id }) {
+            motion = 1
+            slide = 1
             tabName = Tab.Home.name
             setStack(listOf(Page.Home, Page.Detail(id)))
         }
     }
+    val navPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val page = stack.last()
+    val showAdd = sheet == null && (page is Page.Home || page is Page.Entries || page is Page.People || page is Page.PersonDetail)
     Box(Modifier.fillMaxSize().background(ios.groupedBg)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when (val page = stack.last()) {
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                AnimatedContent(
+                    targetState = page,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        val easing = FastOutSlowInEasing
+                        when (motion) {
+                            1 -> (slideInHorizontally(tween(320, easing = easing)) { it } + fadeIn(tween(180))) togetherWith
+                                (slideOutHorizontally(tween(320, easing = easing)) { -it / 5 } + fadeOut(tween(160)))
+                            -1 -> (slideInHorizontally(tween(320, easing = easing)) { -it / 5 } + fadeIn(tween(180))) togetherWith
+                                (slideOutHorizontally(tween(320, easing = easing)) { it } + fadeOut(tween(160)))
+                            else -> {
+                                val dir = if (slide >= 0) 1 else -1
+                                (slideInHorizontally(tween(260, easing = easing)) { dir * it / 5 } + fadeIn(tween(180))) togetherWith
+                                    (slideOutHorizontally(tween(220, easing = easing)) { -dir * it / 6 } + fadeOut(tween(140)))
+                            }
+                        }
+                    },
+                    label = "page"
+                ) { current ->
+                when (current) {
                     Page.Home -> HomeScreen(
                         vm = vm,
                         onAdd = { sheet = Sheet.Add() },
@@ -441,24 +489,39 @@ fun App(vm: OwedVm) {
                     Page.Settings -> SettingsScreen(vm)
                     is Page.Detail -> EntryScreen(
                         vm = vm,
-                        id = page.id,
+                        id = current.id,
                         onBack = { pop() },
-                        onEdit = { sheet = Sheet.Edit(page.id) },
-                        onPay = { sheet = Sheet.Pay(page.id) },
-                        onDelete = { sheet = Sheet.Delete(page.id) }
+                        onEdit = { sheet = Sheet.Edit(current.id) },
+                        onPay = { sheet = Sheet.Pay(current.id) },
+                        onDelete = { sheet = Sheet.Delete(current.id) }
                     )
                     is Page.PersonDetail -> PersonScreen(
                         vm = vm,
-                        key = page.key,
+                        key = current.key,
                         onBack = { pop() },
-                        onAdd = { sheet = Sheet.Add(peopleOf(vm.items).find { it.key == page.key }?.name.orEmpty()) },
                         onOpen = { push(Page.Detail(it.id)) }
                     )
+                }
                 }
             }
             if (stack.size == 1) {
                 TabBar(tab, vm.alerts.count { !it.read }) { select(it) }
             }
+        }
+        if (showAdd) {
+            AddFab(
+                onClick = {
+                    val here = stack.last()
+                    sheet = if (here is Page.PersonDetail) {
+                        Sheet.Add(peopleOf(vm.items).find { it.key == here.key }?.name.orEmpty())
+                    } else {
+                        Sheet.Add()
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = navPad + if (stack.size == 1) 72.dp else 16.dp)
+            )
         }
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
             BannerHost(vm.banner, vm::dismissBanner) { banner ->

@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,21 +37,17 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,7 +65,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
@@ -100,7 +94,7 @@ fun HomeScreen(
     val interestToYou = open.filter { it.isMoney && it.direction == LENT }.sumOf { interest(it) }
     val interestYouOwe = open.filter { it.isMoney && it.direction == BORROWED }.sumOf { interest(it) }
 
-    LargeTitlePage("Owed", trailing = { PlusButton(onAdd) }) {
+    LargeTitlePage("Owed", bottom = 108.dp) {
         if (vm.items.isEmpty()) {
             item {
                 EmptyBlock(
@@ -204,7 +198,7 @@ fun EntriesScreen(
         add("item" to "Items")
         if (scope == "open") add("overdue" to "Overdue")
     }
-    LargeTitlePage("Entries", trailing = { PlusButton(onAdd) }) {
+    LargeTitlePage("Entries", bottom = 108.dp) {
         item { IosSearch(query, { query = it }, "Search name or note") }
         item { Spacer(Modifier.height(10.dp)) }
         item {
@@ -253,7 +247,7 @@ fun PeopleScreen(vm: OwedVm, onOpen: (Person) -> Unit) {
     val people = peopleOf(vm.items).filter { person ->
         query.isBlank() || person.name.contains(query, true) || person.phone.contains(query)
     }
-    LargeTitlePage("People") {
+    LargeTitlePage("People", bottom = 108.dp) {
         item { IosSearch(query, { query = it }, "Search people") }
         item { Spacer(Modifier.height(12.dp)) }
         if (people.isEmpty()) {
@@ -617,7 +611,6 @@ fun PersonScreen(
     vm: OwedVm,
     key: String,
     onBack: () -> Unit,
-    onAdd: () -> Unit,
     onOpen: (Entry) -> Unit
 ) {
     val person = peopleOf(vm.items).find { it.key == key }
@@ -640,12 +633,12 @@ fun PersonScreen(
         else -> "No money open"
     }
     Column(Modifier.fillMaxSize()) {
-        NavBar(p.name, onBack, trailing = { PlusButton(onAdd) })
+        NavBar(p.name, onBack)
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(bottom = 28.dp)
+                .padding(bottom = 88.dp)
         ) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -702,8 +695,6 @@ fun EditorSheet(
     onSave: (Entry) -> Unit
 ) {
     val ios = LocalIos.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     var lent by remember { mutableStateOf((existing?.direction ?: LENT) == LENT) }
     var money by remember { mutableStateOf(existing?.isMoney ?: true) }
     var name by remember { mutableStateOf(existing?.name ?: presetName) }
@@ -728,20 +719,12 @@ fun EditorSheet(
         if (closing) return
         closing = true
         if (save != null) onSave(save)
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        onDismiss()
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = ios.groupedBg,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = ios.tertiary) },
-        shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
-    ) {
+    FastSheet(onDismiss = { close(null) }) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
-                .imePadding()
-                .navigationBarsPadding()
                 .padding(bottom = 12.dp)
         ) {
             Text(
@@ -905,8 +888,6 @@ fun EditorSheet(
 @Composable
 fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -> Unit) {
     val ios = LocalIos.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
@@ -917,20 +898,12 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
         if (closing) return
         closing = true
         if (save != null) onSave(save.first, save.second)
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        onDismiss()
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = ios.groupedBg,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = ios.tertiary) },
-        shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
-    ) {
+    FastSheet(onDismiss = { close(null) }) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
-                .imePadding()
-                .navigationBarsPadding()
                 .padding(bottom = 12.dp)
         ) {
             Text(
@@ -979,26 +952,17 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
 @Composable
 fun DeleteSheet(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val ios = LocalIos.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
     fun close(confirm: Boolean) {
         if (closing) return
         closing = true
         if (confirm) onConfirm()
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        onDismiss()
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color.Transparent,
-        dragHandle = null,
-        shape = RoundedCornerShape(0.dp)
-    ) {
+    FastSheet(onDismiss = { close(false) }, container = Color.Transparent, handle = false) {
         Column(
             Modifier
                 .padding(horizontal = 10.dp)
-                .navigationBarsPadding()
                 .padding(bottom = 10.dp)
         ) {
             Group {
