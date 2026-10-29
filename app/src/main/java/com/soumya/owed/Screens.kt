@@ -358,7 +358,7 @@ fun AlertsScreen(vm: OwedVm, onOpen: (AppAlert) -> Unit) {
             item {
                 EmptyBlock(
                     t("No alerts"),
-                    "Return reminders, payments, and settled entries show up here.",
+                    t("Return reminders, payments, and settled entries show up here."),
                     symbol = "!"
                 )
             }
@@ -366,14 +366,14 @@ fun AlertsScreen(vm: OwedVm, onOpen: (AppAlert) -> Unit) {
             item {
                 Group {
                     vm.alerts.forEachIndexed { index, alert ->
-                        AlertRow(alert) { onOpen(alert) }
+                        AlertRow(alert, onDismiss = { vm.dismissAlert(alert.id) }) { onOpen(alert) }
                         if (index != vm.alerts.lastIndex) Hairline(34.dp)
                     }
                 }
             }
             item {
                 Text(
-                    "Clear alerts",
+                    t("Clear alerts"),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 18.dp)
@@ -396,9 +396,9 @@ fun SettingsScreen(vm: OwedVm) {
     val phoneAlerts = remember(tick) { canNotify(ctx) }
     val exact = remember(tick) { canExact(ctx) }
     val footer = when {
-        !vm.notificationsOn -> "Reminders are paused."
-        !phoneAlerts -> "Phone alerts are blocked, so reminders stay inside Owed until you allow them."
-        else -> "Overdue entries remind you once a day until you mark them returned."
+        !vm.notificationsOn -> t("Reminders are paused.")
+        !phoneAlerts -> t("Phone alerts are blocked, so reminders stay inside Owed until you allow them.")
+        else -> t("Overdue entries remind you once a day until you mark them returned.")
     }
     LargeTitlePage(t("Settings")) {
         item { SectionLabel(t("Language")) }
@@ -429,14 +429,14 @@ fun SettingsScreen(vm: OwedVm) {
         item {
             Group {
                 SwitchRow(
-                    "Alerts",
-                    "Reminders for return dates",
+                    t("Alerts"),
+                    t("Reminders for return dates"),
                     vm.notificationsOn
                 ) { vm.setNotifications(it) }
                 Hairline()
                 NavRow(
-                    "Phone alerts",
-                    value = if (phoneAlerts) "Allowed" else "Blocked",
+                    t("Phone alerts"),
+                    value = if (phoneAlerts) t("Allowed") else t("Blocked"),
                     leading = { TintIcon(Icons.Filled.Notifications, ios.blue) },
                     chevron = Build.VERSION.SDK_INT >= 33,
                     onClick = if (Build.VERSION.SDK_INT >= 33) {
@@ -448,8 +448,8 @@ fun SettingsScreen(vm: OwedVm) {
                 if (Build.VERSION.SDK_INT >= 31) {
                     Hairline()
                     NavRow(
-                        "Precise timing",
-                        value = if (exact) "On" else "Off",
+                        t("Precise timing"),
+                        value = if (exact) t("On") else t("Off"),
                         leading = { TintIcon(Icons.Filled.DateRange, ios.orange) },
                         chevron = true,
                         onClick = { openExactSettings(ctx) }
@@ -457,7 +457,7 @@ fun SettingsScreen(vm: OwedVm) {
                 }
                 Hairline()
                 NavRow(
-                    "Send a test alert",
+                    t("Send a test alert"),
                     leading = { TintIcon(Icons.Filled.Notifications, ios.green) },
                     chevron = true,
                     onClick = { vm.sendTest(ctx) }
@@ -465,22 +465,31 @@ fun SettingsScreen(vm: OwedVm) {
             }
         }
         item { SectionFooter(footer) }
-        item { SectionLabel("Remind me") }
+        item { SectionLabel(t("Remind me")) }
         item {
-            Group {
-                listOf(0 to "On the day", 1 to "1 day before", 3 to "3 days before").forEachIndexed { index, (days, label) ->
-                    if (index > 0) Hairline()
-                    CheckRow(label, vm.remindDays == days) { vm.setLead(days) }
-                }
+            val dayLabel = when (vm.remindDays) {
+                0 -> t("On the day")
+                3 -> t("3 days before")
+                else -> t("1 day before")
             }
-        }
-        item { SectionLabel("Reminder time") }
-        item {
             Group {
-                listOf(8, 9, 12, 18, 21).forEachIndexed { index, hour ->
-                    if (index > 0) Hairline()
-                    CheckRow(hourLabel(hour), vm.reminderHour == hour) { vm.setHour(hour) }
-                }
+                PickRow(
+                    t("Day"),
+                    dayLabel,
+                    listOf(
+                        "0" to t("On the day"),
+                        "1" to t("1 day before"),
+                        "3" to t("3 days before")
+                    ),
+                    vm.remindDays.toString()
+                ) { vm.setLead(it.toInt()) }
+                Hairline()
+                PickRow(
+                    t("Time"),
+                    hourLabel(vm.reminderHour),
+                    listOf(8, 9, 12, 18, 21).map { hour -> hour.toString() to hourLabel(hour) },
+                    vm.reminderHour.toString()
+                ) { vm.setHour(it.toInt()) }
             }
         }
         item { SectionLabel(t("Appearance")) }
@@ -489,27 +498,6 @@ fun SettingsScreen(vm: OwedVm) {
                 listOf("system" to t("System"), "light" to t("Light"), "dark" to t("Dark")).forEachIndexed { index, (id, label) ->
                     if (index > 0) Hairline()
                     CheckRow(label, vm.appearance == id) { vm.changeAppearance(id) }
-                }
-            }
-        }
-        item { SectionLabel(t("Privacy")) }
-        item {
-            Group {
-                SwitchRow(
-                    t("Phone lock"),
-                    t("Face, fingerprint, or PIN before balances show"),
-                    vm.lockOn
-                ) { on ->
-                    if (on && !phoneLockReady(ctx)) {
-                        vm.flash(
-                            t("Phone lock"),
-                            t("Set a screen lock in phone settings first."),
-                            "soon",
-                            null
-                        )
-                    } else {
-                        vm.setLock(on)
-                    }
                 }
             }
         }
@@ -567,7 +555,7 @@ fun SettingsScreen(vm: OwedVm) {
                         try {
                             shareText(ctx, exportText(vm.items))
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("Couldn’t share", "No app accepted the summary.", "info", null)
+                            vm.flash(t("Couldn’t share"), t("No app accepted the summary."), "info", null)
                         }
                     }
                 )
@@ -575,7 +563,7 @@ fun SettingsScreen(vm: OwedVm) {
                 NavRow(t("Saved entries"), value = vm.items.size.toString())
             }
         }
-        item { SectionFooter("Owed keeps this list on your phone. Nothing is uploaded.") }
+        item { SectionFooter(t("Owed keeps this list on your phone. Nothing is uploaded.")) }
         item { SectionLabel(t("About")) }
         item {
             Group {
@@ -595,7 +583,7 @@ fun SettingsScreen(vm: OwedVm) {
                         try {
                             ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$DEV_EMAIL")))
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("No mail app", "Write to $DEV_EMAIL from another app.", "info", null)
+                            vm.flash(t("No mail app"), t("Write to %s from another app.", DEV_EMAIL), "info", null)
                         }
                     }
                 )
@@ -608,7 +596,7 @@ fun SettingsScreen(vm: OwedVm) {
                         try {
                             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DEV_GITHUB)))
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("Can’t open link", DEV_GITHUB, "info", null)
+                            vm.flash(t("Can’t open link"), DEV_GITHUB, "info", null)
                         }
                     }
                 )
@@ -621,13 +609,13 @@ fun SettingsScreen(vm: OwedVm) {
                         try {
                             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DEV_TELEGRAM)))
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("Can’t open link", DEV_TELEGRAM, "info", null)
+                            vm.flash(t("Can’t open link"), DEV_TELEGRAM, "info", null)
                         }
                     }
                 )
             }
         }
-        item { SectionFooter("Track money and things, in both directions.") }
+        item { SectionFooter(t("Track money and things, in both directions.")) }
     }
 }
 
@@ -1342,10 +1330,14 @@ private fun PersonRow(person: Person, onClick: () -> Unit) {
 }
 
 @Composable
-private fun AlertRow(alert: AppAlert, onClick: () -> Unit) {
+private fun AlertRow(alert: AppAlert, onDismiss: () -> Unit, onClick: () -> Unit) {
     val ios = LocalIos.current
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)
+        Modifier
+            .swipeAway(alert.id, onDismiss)
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Box(
             Modifier

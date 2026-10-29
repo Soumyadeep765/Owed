@@ -39,7 +39,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -65,8 +68,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -396,7 +397,7 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
     val tap = rememberTap()
     Column(Modifier.fillMaxWidth().background(ios.tabBar)) {
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(ios.separator))
-        Box(Modifier.fillMaxWidth().padding(bottom = bottom)) {
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = bottom)) {
             Row(Modifier.fillMaxWidth().height(50.dp)) {
                     Tab.entries.forEach { tab ->
                         val on = tab == selected
@@ -966,33 +967,50 @@ fun PickRow(
 ) {
     val ios = LocalIos.current
     var open by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable { open = true }
+                .clickable { open = !open }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, modifier = Modifier.weight(1f), color = ios.label, fontSize = 17.sp)
+            Text(title, color = ios.label, fontSize = 17.sp)
+            Spacer(Modifier.weight(1f))
             Text(
                 value,
                 color = ios.blue,
                 fontSize = 17.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 190.dp)
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(max = 200.dp)
             )
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { (id, label) ->
-                DropdownMenuItem(
-                    text = { Text(label, color = if (id == selected) ios.blue else ios.label) },
-                    onClick = {
-                        open = false
-                        onSelect(id)
+        AnimatedVisibility(visible = open) {
+            Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                options.forEach { (id, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelect(id)
+                                open = false
+                            }
+                            .padding(horizontal = 16.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier.weight(1f),
+                            color = if (id == selected) ios.blue else ios.label,
+                            fontSize = 16.sp
+                        )
+                        if (id == selected) {
+                            Icon(Icons.Filled.Check, contentDescription = null, tint = ios.blue, modifier = Modifier.size(18.dp))
+                        }
                     }
-                )
+                }
             }
         }
     }
@@ -1120,6 +1138,39 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
+fun Modifier.swipeAway(key: Any, onDismiss: () -> Unit): Modifier {
+    val shift = remember(key) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    return this
+        .graphicsLayer {
+            translationX = shift.value
+            val fade = kotlin.math.abs(shift.value) / 500f
+            alpha = 1f - fade.coerceIn(0f, 0.55f)
+        }
+        .pointerInput(key) {
+            detectHorizontalDragGestures(
+                onHorizontalDrag = { _, drag ->
+                    scope.launch { shift.snapTo(shift.value + drag) }
+                },
+                onDragCancel = {
+                    scope.launch { shift.animateTo(0f, tween(160)) }
+                },
+                onDragEnd = {
+                    scope.launch {
+                        if (kotlin.math.abs(shift.value) > 96f) {
+                            val target = if (shift.value > 0f) 720f else -720f
+                            shift.animateTo(target, tween(160))
+                            onDismiss()
+                        } else {
+                            shift.animateTo(0f, tween(160))
+                        }
+                    }
+                }
+            )
+        }
+}
+
+@Composable
 fun BannerHost(banner: Banner?, onDismiss: () -> Unit, onClick: (Banner) -> Unit) {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var shown by remember { mutableStateOf<Banner?>(null) }
@@ -1140,9 +1191,11 @@ fun BannerHost(banner: Banner?, onDismiss: () -> Unit, onClick: (Banner) -> Unit
         modifier = Modifier.padding(top = top + 6.dp, start = 10.dp, end = 10.dp)
     ) {
         val item = draw ?: return@AnimatedVisibility
-        BannerCard(item) {
-            onClick(item)
-            onDismiss()
+        Box(Modifier.swipeAway(item.id) { onDismiss() }) {
+            BannerCard(item) {
+                onClick(item)
+                onDismiss()
+            }
         }
     }
 }

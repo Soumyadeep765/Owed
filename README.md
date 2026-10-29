@@ -19,8 +19,8 @@ The first time you open it, you pick a language, walk through a short intro, the
 - Pick a name from your contacts
 - Save a backup file and restore it later
 - Put a home screen widget on the two balances
-- Lock the app with the phone’s face, fingerprint, or PIN
 - Long-press the icon for Lent and Borrowed
+- Slide an in-app alert away to close it
 
 Amounts follow the currency you choose. Words follow the language. You can change either later in Settings. Appearance can follow the phone, or stay light or dark.
 
