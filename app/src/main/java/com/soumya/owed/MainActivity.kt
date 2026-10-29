@@ -16,11 +16,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -37,6 +42,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,7 +52,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.AndroidViewModel
@@ -395,7 +406,15 @@ class MainActivity : ComponentActivity() {
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
-            OwedTheme(dark) { App(vm) }
+            val direction = if (vm.language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+            CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                OwedTheme(dark) {
+                    Box(Modifier.fillMaxSize()) {
+                        App(vm)
+                        SplashFade()
+                    }
+                }
+            }
         }
     }
 
@@ -412,6 +431,42 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         vm.reloadAlerts()
         vm.rescheduleAll()
+    }
+}
+
+@Composable
+private fun SplashFade() {
+    val ios = LocalIos.current
+    var hide by remember { mutableStateOf(false) }
+    val alpha by animateFloatAsState(
+        if (hide) 0f else 1f,
+        tween(420, easing = FastOutSlowInEasing),
+        label = "splash"
+    )
+    LaunchedEffect(Unit) { hide = true }
+    if (alpha <= 0.01f) return
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { this.alpha = alpha }
+            .background(ios.groupedBg)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {},
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.size(96.dp).clip(CircleShape).background(ios.blue),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier.size(50.dp).clip(CircleShape).background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(24.dp).clip(CircleShape).background(ios.blue))
+            }
+        }
     }
 }
 
@@ -467,17 +522,16 @@ fun App(vm: OwedVm) {
         }
     }
     val page = stack.last()
+    var startStep by rememberSaveable { mutableIntStateOf(0) }
     if (!vm.introSeen) {
-        IntroScreen(
-            language = vm.language,
-            onLanguage = { code ->
-                if (code != vm.language) {
-                    vm.changeLanguage(code)
-                    (context as? android.app.Activity)?.recreate()
-                }
-            },
-            onDone = { vm.finishIntro() }
-        )
+        if (startStep == 0) {
+            LanguagePick { code ->
+                vm.changeLanguage(code)
+                startStep = 1
+            }
+        } else {
+            IntroScreen(onDone = { vm.finishIntro() })
+        }
         return
     }
     val navPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()

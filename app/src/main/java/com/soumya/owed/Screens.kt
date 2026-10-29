@@ -9,13 +9,16 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,11 +56,13 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -69,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import java.util.UUID
@@ -360,10 +366,7 @@ fun SettingsScreen(vm: OwedVm) {
                 Languages.forEachIndexed { index, option ->
                     if (index > 0) Hairline()
                     CheckRow(option.native, vm.language == option.code) {
-                        if (vm.language != option.code) {
-                            vm.changeLanguage(option.code)
-                            (ctx as? android.app.Activity)?.recreate()
-                        }
+                        vm.changeLanguage(option.code)
                     }
                 }
             }
@@ -1281,15 +1284,9 @@ private fun openAppSettings(ctx: Context) {
 }
 
 @Composable
-fun IntroScreen(language: String, onLanguage: (String) -> Unit, onDone: () -> Unit) {
+fun LanguagePick(onContinue: (String) -> Unit) {
     val ios = LocalIos.current
-    var page by remember { mutableIntStateOf(0) }
-    val pages = listOf(
-        t("Keep track of what’s owed") to t("Money and things you lent or borrowed, in one place."),
-        t("Reminders that show up") to t("A nudge before the date, on the day, and again if it’s overdue."),
-        t("Your currency, your language") to t("Amounts and words follow what you choose.")
-    )
-    val (title, body) = pages[page]
+    var picked by remember { mutableStateOf<String?>(null) }
     Column(
         Modifier
             .fillMaxSize()
@@ -1297,57 +1294,100 @@ fun IntroScreen(language: String, onLanguage: (String) -> Unit, onDone: () -> Un
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp)
-        ) {
-            Languages.forEach { option ->
-                val on = option.code == language
-                Text(
-                    option.native,
-                    color = if (on) Color.White else ios.label,
-                    fontSize = 14.sp,
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (on) ios.blue else ios.fill)
-                        .clickable { onLanguage(option.code) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-        }
+        Text(
+            t("Choose a language"),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
+            color = ios.label,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.4).sp
+        )
         Column(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 28.dp),
-            verticalArrangement = Arrangement.Center
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 12.dp)
         ) {
-            Box(
-                Modifier.size(88.dp).clip(CircleShape).background(ios.blue),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(22.dp).clip(CircleShape).background(ios.blue))
+            Group {
+                Languages.forEachIndexed { index, option ->
+                    if (index > 0) Hairline()
+                    CheckRow(option.native, picked == option.code) { picked = option.code }
                 }
             }
-            Spacer(Modifier.height(28.dp))
-            Text(title, color = ios.label, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
-            Spacer(Modifier.height(10.dp))
-            Text(body, color = ios.secondary, fontSize = 17.sp)
+        }
+        AnimatedVisibility(visible = picked != null) {
+            PrimaryButton(
+                t("Continue"),
+                { picked?.let(onContinue) },
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun IntroScreen(onDone: () -> Unit) {
+    val ios = LocalIos.current
+    val scope = rememberCoroutineScope()
+    val pages = listOf(
+        t("Keep track of what’s owed") to t("Money and things you lent or borrowed, in one place."),
+        t("Reminders that show up") to t("A nudge before the date, on the day, and again if it’s overdue."),
+        t("Your currency, your language") to t("Amounts and words follow what you choose.")
+    )
+    val pager = rememberPagerState(pageCount = { pages.size })
+    val page = pager.currentPage
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(ios.groupedBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) { index ->
+            val (title, body) = pages[index]
+            val distance = (pager.currentPage - index) + pager.currentPageOffsetFraction
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val away = kotlin.math.abs(distance).coerceIn(0f, 1f)
+                        alpha = 1f - away * 0.25f
+                        translationY = away * 18.dp.toPx()
+                    }
+                    .padding(horizontal = 28.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    Modifier.size(88.dp).clip(CircleShape).background(ios.blue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier.size(46.dp).clip(CircleShape).background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.size(22.dp).clip(CircleShape).background(ios.blue))
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+                Text(title, color = ios.label, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+                Spacer(Modifier.height(10.dp))
+                Text(body, color = ios.secondary, fontSize = 17.sp)
+            }
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center) {
             pages.indices.forEach { index ->
+                val on = index == page
+                val width by animateDpAsState(if (on) 18.dp else 6.dp, tween(220), label = "dot")
                 Box(
                     Modifier
                         .padding(horizontal = 4.dp)
-                        .size(if (index == page) 8.dp else 6.dp)
+                        .height(6.dp)
+                        .width(width)
                         .clip(CircleShape)
-                        .background(if (index == page) ios.blue else ios.fill)
+                        .background(if (on) ios.blue else ios.fill)
                 )
             }
         }
@@ -1365,7 +1405,8 @@ fun IntroScreen(language: String, onLanguage: (String) -> Unit, onDone: () -> Un
             PrimaryButton(
                 if (page == pages.lastIndex) t("Start") else t("Next"),
                 {
-                    if (page == pages.lastIndex) onDone() else page += 1
+                    if (page == pages.lastIndex) onDone()
+                    else scope.launch { pager.animateScrollToPage(page + 1) }
                 },
                 Modifier.widthIn(min = 140.dp)
             )

@@ -95,6 +95,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -405,11 +406,9 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
             Box(Modifier.fillMaxWidth().height(50.dp)) {
                 Box(
                     Modifier
-                        .offset(x = x)
-                        .width(tabWidth)
-                        .height(50.dp)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .background(ios.blue.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .offset(x = x + (tabWidth - 32.dp) / 2, y = 4.dp)
+                        .size(32.dp)
+                        .background(ios.blue.copy(alpha = 0.14f), CircleShape)
                 )
                 Row(Modifier.fillMaxWidth().height(50.dp)) {
                     Tab.entries.forEach { tab ->
@@ -485,7 +484,7 @@ fun Modifier.stretchOverscroll(): Modifier = composed {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
-                pull += available.y * 0.45f
+                pull += available.y * 0.12f
                 return Offset(0f, available.y)
             }
 
@@ -502,11 +501,12 @@ fun Modifier.stretchOverscroll(): Modifier = composed {
         }
     }
     this
+        .clipToBounds()
         .nestedScroll(connection)
         .graphicsLayer {
-            val damp = pull.coerceIn(-140f, 140f)
-            translationY = damp * 0.35f
-            scaleY = 1f + (kotlin.math.abs(damp) / size.height.coerceAtLeast(1f)) * 0.45f
+            val damp = pull.coerceIn(-24f, 24f)
+            translationY = damp * 0.2f
+            scaleY = 1f + (kotlin.math.abs(damp) / size.height.coerceAtLeast(1f)) * 0.06f
             transformOrigin = TransformOrigin(0.5f, if (pull >= 0f) 0f else 1f)
         }
 }
