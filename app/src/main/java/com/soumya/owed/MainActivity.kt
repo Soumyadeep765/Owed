@@ -79,6 +79,10 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         private set
     var remindDays by mutableIntStateOf(store.remindDaysBefore())
         private set
+    var textsOn by mutableStateOf(store.textsEnabled())
+        private set
+    var textSim by mutableIntStateOf(store.textSim())
+        private set
     var appearance by mutableStateOf(store.appearance())
         private set
     var language by mutableStateOf(store.language())
@@ -150,6 +154,8 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         notificationsOn = store.notificationsEnabled()
         reminderHour = store.reminderHour()
         remindDays = store.remindDaysBefore()
+        textsOn = store.textsEnabled()
+        textSim = store.textSim()
         appearance = store.appearance()
         language = store.language()
         currency = store.currency()
@@ -281,6 +287,16 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         rescheduleAll()
     }
 
+    fun setTexts(on: Boolean) {
+        textsOn = on
+        store.setTextsEnabled(on)
+    }
+
+    fun setTextSim(id: Int) {
+        textSim = id
+        store.setTextSim(id)
+    }
+
     fun changeAppearance(value: String) {
         if (value != "system" && value != "light" && value != "dark") return
         appearance = value
@@ -305,6 +321,19 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
     fun finishIntro() {
         introSeen = true
         store.setIntroSeen()
+    }
+
+    fun sendTestText(ctx: Context, phone: String) {
+        if (!textsOn || !PhoneTexts.allowed(ctx)) {
+            flash(t("Text from this phone"), t("Turn on texts, then try again."), "soon", null)
+            return
+        }
+        val body = t("Owed test. Your phone can send reminders.")
+        if (PhoneTexts.send(ctx, phone, body, textSim)) {
+            flash(t("Test text sent"), t("Check that number. Your carrier may charge for this."), "test", null)
+        } else {
+            flash(t("Couldn’t send"), t("Check the number, then try again."), "soon", null)
+        }
     }
 
     fun sendTest(ctx: Context) {

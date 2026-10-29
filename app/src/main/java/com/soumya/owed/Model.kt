@@ -237,12 +237,12 @@ fun alertBody(e: Entry): String {
 }
 
 fun reminderText(e: Entry): String {
-    val what = if (e.isMoney) inr(owing(e)) else e.desc.ifBlank { "an item" }
-    val due = e.due?.let { " Due ${fmt(it)}." }.orEmpty()
+    val what = if (e.isMoney) inr(owing(e)) else e.desc.ifBlank { t("an item") }
+    val due = e.due?.let { " ${t("Due %s.", fmt(it))}" }.orEmpty()
     return if (e.direction == LENT) {
-        "Hi ${e.name}, a gentle reminder about $what.$due Thank you!"
+        t("Hi %1\$s, a gentle reminder about %2\$s.%3\$s Thank you!", e.name, what, due)
     } else {
-        "Hi ${e.name}, a note that I still have $what to return.$due Thank you!"
+        t("Hi %1\$s, a note that I still have %2\$s to return.%3\$s Thank you!", e.name, what, due)
     }
 }
 
@@ -472,6 +472,28 @@ class Store(private val ctx: Context) {
         p.edit().putBoolean("lock", on).apply()
     }
 
+    fun textsEnabled(): Boolean = p.getBoolean("texts", false)
+
+    fun setTextsEnabled(on: Boolean) {
+        p.edit().putBoolean("texts", on).apply()
+    }
+
+    fun textSim(): Int = p.getInt("textSim", -1)
+
+    fun setTextSim(id: Int) {
+        p.edit().putInt("textSim", id).apply()
+    }
+
+    fun alreadyTexted(id: String, kind: String, due: Long): Boolean {
+        return p.getStringSet("texted", emptySet())?.contains("$id|$kind|$due") == true
+    }
+
+    fun markTexted(id: String, kind: String, due: Long) {
+        val next = (p.getStringSet("texted", emptySet()) ?: emptySet()).toMutableSet()
+        next.add("$id|$kind|$due")
+        p.edit().putStringSet("texted", next).apply()
+    }
+
     fun backupJson(): String {
         return JSONObject()
             .put("app", "owed")
@@ -485,6 +507,8 @@ class Store(private val ctx: Context) {
             .put("lang", language())
             .put("currency", currency())
             .put("lock", lockEnabled())
+            .put("texts", textsEnabled())
+            .put("textSim", textSim())
             .toString()
     }
 
@@ -514,6 +538,8 @@ class Store(private val ctx: Context) {
             .putString("lang", lang.takeIf { code -> Languages.any { it.code == code } } ?: "en")
             .putString("currency", money.takeIf { code -> Currencies.any { it.code == code } } ?: "INR")
             .putBoolean("lock", root.optBoolean("lock", lockEnabled()))
+            .putBoolean("texts", root.optBoolean("texts", textsEnabled()))
+            .putInt("textSim", root.optInt("textSim", textSim()))
             .apply()
         BalanceWidget.update(ctx)
         return true

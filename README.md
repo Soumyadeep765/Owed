@@ -21,6 +21,7 @@ The first time you open it, you pick a language, walk through a short intro, the
 - Put a home screen widget on the two balances
 - Long-press the icon for Lent and Borrowed
 - Slide an in-app alert away to close it
+- Optionally text a reminder from this phone’s SIM. It stays off until you allow it
 
 Amounts follow the currency you choose. Words follow the language. You can change either later in Settings. Appearance can follow the phone, or stay light or dark.
 

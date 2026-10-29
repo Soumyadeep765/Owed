@@ -4,6 +4,7 @@ package com.soumya.owed
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.telephony.SubscriptionManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -465,6 +466,67 @@ fun SettingsScreen(vm: OwedVm) {
             }
         }
         item { SectionFooter(footer) }
+        item { SectionLabel(t("Messages")) }
+        item {
+            val askSms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+                if (result[Manifest.permission.SEND_SMS] == true) vm.setTexts(true)
+                else vm.flash(t("Text from this phone"), t("Allow messages if you want Owed to text for you."), "soon", null)
+            }
+            val sims = remember(tick, vm.textsOn) { phoneSims(ctx) }
+            Group {
+                SwitchRow(
+                    t("Text from this phone"),
+                    t("Optional. Uses your SIM and your message balance."),
+                    vm.textsOn && PhoneTexts.allowed(ctx)
+                ) { on ->
+                    if (!on) vm.setTexts(false)
+                    else if (PhoneTexts.allowed(ctx)) vm.setTexts(true)
+                    else askSms.launch(
+                        arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.READ_PHONE_STATE)
+                    )
+                }
+                if (vm.textsOn && sims.size > 1) {
+                    Hairline()
+                    val current = sims.find { it.first == vm.textSim }?.second ?: t("Default SIM")
+                    PickRow(
+                        t("SIM"),
+                        current,
+                        listOf("-1" to t("Default SIM")) + sims.map { it.first.toString() to it.second },
+                        vm.textSim.toString()
+                    ) { vm.setTextSim(it.toInt()) }
+                }
+                if (vm.textsOn && PhoneTexts.allowed(ctx)) {
+                    Hairline()
+                    var testOpen by remember { mutableStateOf(false) }
+                    var testPhone by rememberSaveable { mutableStateOf("") }
+                    NavRow(
+                        t("Send a test text"),
+                        leading = { TintIcon(Icons.Filled.Info, ios.green) },
+                        chevron = true,
+                        onClick = { testOpen = !testOpen }
+                    )
+                    AnimatedVisibility(visible = testOpen) {
+                        Column(Modifier.padding(bottom = 12.dp)) {
+                            InputRow(
+                                t("Phone"),
+                                testPhone,
+                                { testPhone = it },
+                                t("Your number"),
+                                KeyboardOptions(keyboardType = KeyboardType.Phone)
+                            )
+                            PrimaryButton(
+                                t("Send"),
+                                { vm.sendTestText(ctx, testPhone) },
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            SectionFooter(t("When a reminder fires, Owed can text that person once. An overdue entry is not texted again every day. Turn this off any time."))
+        }
         item { SectionLabel(t("Remind me")) }
         item {
             val dayLabel = when (vm.remindDays) {
@@ -672,33 +734,33 @@ fun EntryScreen(
             SectionLabel("Actions")
             Group {
                 val actions = buildList {
-                    if (!e.returned && e.isMoney) add(Triple("Record payment", null as String?, onPay))
+                    if (!e.returned && e.isMoney) add(Triple(t("Record payment"), null as String?, onPay))
                     if (!e.returned) {
-                        add(Triple("Mark returned", null, { vm.markReturned(e.id) }))
-                        add(Triple("Share reminder", null, {
+                        add(Triple(t("Mark returned"), null, { vm.markReturned(e.id) }))
+                        add(Triple(t("Share reminder"), null, {
                             try {
                                 shareText(ctx, reminderText(e))
                             } catch (_: ActivityNotFoundException) {
-                                vm.flash("Couldn’t share", "No app accepted the reminder.", "info", e.id)
+                                vm.flash(t("Couldn’t share"), t("No app accepted the reminder."), "info", e.id)
                             }
                         }))
                         if (e.phone.isNotBlank()) {
-                            add(Triple("Text ${e.name}", null, {
+                            add(Triple(t("Text %s", e.name), null, {
                                 try {
                                     sms(ctx, e.phone, reminderText(e))
                                 } catch (_: ActivityNotFoundException) {
-                                    vm.flash("No messages app", "Share the reminder instead.", "info", e.id)
+                                    vm.flash(t("No messages app"), t("Share the reminder instead."), "info", e.id)
                                 }
                             }))
                         }
                     } else {
-                        add(Triple("Reopen", null, { vm.reopen(e.id) }))
+                        add(Triple(t("Reopen"), null, { vm.reopen(e.id) }))
                     }
-                    if (e.phone.isNotBlank()) add(Triple("Call", e.phone, {
+                    if (e.phone.isNotBlank()) add(Triple(t("Call"), e.phone, {
                         try {
                             dial(ctx, e.phone)
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("Can’t call", "No phone app is available.", "info", e.id)
+                            vm.flash(t("Can’t call"), t("No phone app is available."), "info", e.id)
                         }
                     }))
                     add(Triple("Edit", null, onEdit))
@@ -719,7 +781,7 @@ fun EntryScreen(
                     if (e.isMoney && e.paid > 0) add("Received" to inr(e.paid))
                     val returnedOn = e.returnedAt
                     if (e.returned && returnedOn != null) add("Returned" to fmt(returnedOn))
-                    if (e.phone.isNotBlank()) add("Phone" to e.phone)
+                    if (e.phone.isNotBlank()) add(t("Phone") to e.phone)
                 }
                 details.forEachIndexed { index, (label, value) ->
                     NavRow(label, value = value)
@@ -824,21 +886,21 @@ fun PersonScreen(
                 )
             }
             if (p.phone.isNotBlank()) {
-                SectionLabel("Contact")
+                SectionLabel(t("Contact"))
                 Group {
-                    NavRow("Call", value = p.phone, chevron = true, onClick = {
+                    NavRow(t("Call"), value = p.phone, chevron = true, onClick = {
                         try {
                             dial(ctx, p.phone)
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("Can’t call", "No phone app is available.", "info", null)
+                            vm.flash(t("Can’t call"), t("No phone app is available."), "info", null)
                         }
                     })
                     Hairline()
-                    NavRow("Text", chevron = true, onClick = {
+                    NavRow(t("Text"), chevron = true, onClick = {
                         try {
                             sms(ctx, p.phone, personMessage(p))
                         } catch (_: ActivityNotFoundException) {
-                            vm.flash("No messages app", "Nothing on this phone can send a text.", "info", null)
+                            vm.flash(t("No messages app"), t("Nothing on this phone can send a text."), "info", null)
                         }
                     })
                 }
@@ -983,7 +1045,7 @@ fun EditorSheet(
                     Text(t("Contacts"), color = ios.blue, fontSize = 17.sp)
                 }
                 Hairline()
-                InputRow("Phone", phone, { phone = it }, "Optional", KeyboardOptions(keyboardType = KeyboardType.Phone))
+                InputRow(t("Phone"), phone, { phone = it }, t("Optional"), KeyboardOptions(keyboardType = KeyboardType.Phone))
             }
             AnimatedVisibility(money, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                 Column {
@@ -1036,7 +1098,7 @@ fun EditorSheet(
             }
             SectionLabel("Note")
             Group {
-                InputRow("Note", note, { note = it }, "Optional")
+                InputRow("Note", note, { note = it }, t("Optional"))
             }
             if (err.isNotBlank()) {
                 Text(
@@ -1150,7 +1212,7 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
             Group {
                 InputRow("Amount", amount, { amount = it }, "0", KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 Hairline()
-                InputRow("Note", note, { note = it }, "Optional")
+                InputRow("Note", note, { note = it }, t("Optional"))
             }
             SectionFooter(
                 when {
@@ -1419,12 +1481,12 @@ private fun rowKind(entry: Entry): String = when {
 private fun personMessage(person: Person): String {
     val open = person.open
     if (open.size == 1) return reminderText(open.first())
-    if (open.isEmpty()) return "Hi ${person.name}, thanks — everything between us is settled."
+    if (open.isEmpty()) return t("Hi %s, thanks — everything between us is settled.", person.name)
     val lines = open.joinToString("\n") { entry ->
-        val what = if (entry.isMoney) inr(owing(entry)) else entry.desc.ifBlank { "an item" }
+        val what = if (entry.isMoney) inr(owing(entry)) else entry.desc.ifBlank { t("an item") }
         "• $what"
     }
-    return "Hi ${person.name}, a gentle reminder about:\n$lines\nThank you!"
+    return t("Hi %1\$s, a gentle reminder about:\n%2\$s\nThank you!", person.name, lines)
 }
 
 private fun trimNum(value: Double): String {
@@ -1440,6 +1502,23 @@ private fun shareText(ctx: Context, text: String) {
 
 private fun sms(ctx: Context, phone: String, body: String) {
     ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$phone")).putExtra("sms_body", body))
+}
+
+private fun phoneSims(ctx: Context): List<Pair<Int, String>> {
+    if (Build.VERSION.SDK_INT < 22) return emptyList()
+    if (ctx.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+        return emptyList()
+    }
+    val manager = ctx.getSystemService(SubscriptionManager::class.java) ?: return emptyList()
+    val list = try {
+        manager.activeSubscriptionInfoList
+    } catch (_: SecurityException) {
+        null
+    } ?: return emptyList()
+    return list.map { info ->
+        val name = info.displayName?.toString()?.takeIf { it.isNotBlank() } ?: t("SIM %d", info.simSlotIndex + 1)
+        info.subscriptionId to name
+    }
 }
 
 private fun dial(ctx: Context, phone: String) {
