@@ -11,6 +11,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.NumberFormat
+import java.util.Currency
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -21,6 +22,10 @@ import java.util.Locale
 const val LENT = 0
 const val BORROWED = 1
 const val APP_VERSION = "1.1"
+const val DEV_NAME = "Soumyadeep Das"
+const val DEV_EMAIL = "soumyadeepdas765@gmail.com"
+const val DEV_GITHUB = "https://github.com/Soumyadeep765/Owed"
+const val DEV_TELEGRAM = "https://t.me/devxy"
 
 data class Payment(
     val id: String,
@@ -113,8 +118,24 @@ fun hourLabel(hour: Int): String = when (hour) {
     else -> "${hour - 12}:00 PM"
 }
 
-fun inr(v: Double): String =
-    "₹" + NumberFormat.getIntegerInstance(Locale("en", "IN")).format(Math.round(v))
+fun inr(v: Double): String {
+    val code = LocaleHub.currency
+    val currency = try {
+        Currency.getInstance(code)
+    } catch (_: Exception) {
+        Currency.getInstance("INR")
+    }
+    val digits = when (currency.currencyCode) {
+        "JPY", "KRW", "VND" -> 0
+        "INR" -> 0
+        else -> currency.defaultFractionDigits.coerceIn(0, 2)
+    }
+    val fmt = NumberFormat.getCurrencyInstance(Locale.getDefault())
+    fmt.currency = currency
+    fmt.minimumFractionDigits = digits
+    fmt.maximumFractionDigits = digits
+    return fmt.format(v)
+}
 
 fun daysBetween(a: Long, b: Long): Long = ChronoUnit.DAYS.between(ld(a), ld(b))
 
@@ -128,56 +149,59 @@ fun interest(e: Entry): Double {
 fun owing(e: Entry): Double = maxOf(0.0, e.amount + interest(e) - e.paid)
 
 fun statusOf(e: Entry): Status {
-    if (e.returned) return Status("Returned", Tone.Good)
-    val due = e.due ?: return Status("No return date", Tone.Mute)
+    if (e.returned) return Status(t("Returned"), Tone.Good)
+    val due = e.due ?: return Status(t("No return date"), Tone.Mute)
     val d = daysBetween(todayMs(), due)
     return when {
         d < 0 -> {
             val n = -d
-            val unit = if (n == 1L) "day" else "days"
-            val label = if (e.direction == BORROWED) "Late by $n $unit" else "Overdue by $n $unit"
+            val label = if (e.direction == BORROWED) {
+                if (n == 1L) t("Late by 1 day") else t("Late by %d days", n.toInt())
+            } else {
+                if (n == 1L) t("Overdue by 1 day") else t("Overdue by %d days", n.toInt())
+            }
             Status(label, Tone.Bad)
         }
-        d == 0L -> Status("Due today", Tone.Warn)
-        d == 1L -> Status("Due tomorrow", Tone.Warn)
-        d <= 3 -> Status("Due in $d days", Tone.Warn)
-        else -> Status("Due in $d days", Tone.Mute)
+        d == 0L -> Status(t("Due today"), Tone.Warn)
+        d == 1L -> Status(t("Due tomorrow"), Tone.Warn)
+        d <= 3 -> Status(t("Due in %d days", d.toInt()), Tone.Warn)
+        else -> Status(t("Due in %d days", d.toInt()), Tone.Mute)
     }
 }
 
 fun kindLabel(e: Entry): String = when {
-    e.isMoney && e.direction == LENT -> "Money lent"
-    e.isMoney && e.direction == BORROWED -> "Money borrowed"
-    e.direction == LENT -> "Item lent"
-    else -> "Item borrowed"
+    e.isMoney && e.direction == LENT -> t("Money lent")
+    e.isMoney && e.direction == BORROWED -> t("Money borrowed")
+    e.direction == LENT -> t("Item lent")
+    else -> t("Item borrowed")
 }
 
 fun listSubtitle(e: Entry): String {
     val kind = when {
-        e.isMoney && e.direction == LENT -> "Lent"
-        e.isMoney && e.direction == BORROWED -> "Borrowed"
-        e.direction == LENT -> "Your item"
-        else -> "Their item"
+        e.isMoney && e.direction == LENT -> t("Lent")
+        e.isMoney && e.direction == BORROWED -> t("Borrowed")
+        e.direction == LENT -> t("Your item")
+        else -> t("Their item")
     }
     return "$kind · ${statusOf(e).label}"
 }
 
 fun heroCaption(e: Entry): String = when {
-    e.returned -> "Returned"
-    e.isMoney && e.direction == LENT -> "They owe you"
-    e.isMoney && e.direction == BORROWED -> "You owe"
-    e.direction == LENT -> "They have"
-    else -> "You have"
+    e.returned -> t("Returned")
+    e.isMoney && e.direction == LENT -> t("They owe you")
+    e.isMoney && e.direction == BORROWED -> t("You owe")
+    e.direction == LENT -> t("They have")
+    else -> t("You have")
 }
 
 fun alertTitle(kind: String, e: Entry): String = when (kind) {
-    "overdue" -> if (e.direction == BORROWED) "Late to return" else "Overdue"
-    "due" -> "Due today"
-    "soon" -> "Coming up"
-    "payment" -> "Payment recorded"
-    "returned" -> "Marked returned"
-    "added" -> "Added"
-    "test" -> "Alerts are on"
+    "overdue" -> if (e.direction == BORROWED) t("Late to return") else t("Overdue")
+    "due" -> t("Due today")
+    "soon" -> t("Coming up")
+    "payment" -> t("Payment recorded")
+    "returned" -> t("Marked returned")
+    "added" -> t("Added")
+    "test" -> t("Alerts are on")
     else -> "Owed"
 }
 
@@ -401,6 +425,24 @@ class Store(ctx: Context) {
 
     fun setAppearance(value: String) {
         p.edit().putString("appearance", value).apply()
+    }
+
+    fun language(): String = p.getString("lang", "en")?.takeIf { code -> Languages.any { it.code == code } } ?: "en"
+
+    fun setLanguage(code: String) {
+        p.edit().putString("lang", code).apply()
+    }
+
+    fun currency(): String = p.getString("currency", "INR")?.takeIf { code -> Currencies.any { it.code == code } } ?: "INR"
+
+    fun setCurrency(code: String) {
+        p.edit().putString("currency", code).apply()
+    }
+
+    fun introSeen(): Boolean = p.getBoolean("intro", false)
+
+    fun setIntroSeen() {
+        p.edit().putBoolean("intro", true).apply()
     }
 }
 

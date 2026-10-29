@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,8 +48,10 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -98,9 +103,9 @@ fun HomeScreen(
         if (vm.items.isEmpty()) {
             item {
                 EmptyBlock(
-                    "Nothing owed right now",
-                    "Keep money and things you’ve lent or borrowed in one place.",
-                    "Add an entry",
+                    t("Nothing owed right now"),
+                    t("Keep money and things you’ve lent or borrowed in one place."),
+                    t("Add an entry"),
                     onAdd
                 )
             }
@@ -108,7 +113,7 @@ fun HomeScreen(
         item {
             Group {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)) {
-                    Text("Net", color = ios.secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(t("Net"), color = ios.secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Text(
                         inr(if (net < 0) -net else net),
                         color = ios.label,
@@ -118,9 +123,9 @@ fun HomeScreen(
                     )
                     Text(
                         when {
-                            net > 0.5 -> "in your favour"
-                            net < -0.5 -> "you owe more"
-                            else -> "you’re square"
+                            net > 0.5 -> t("in your favour")
+                            net < -0.5 -> t("you owe more")
+                            else -> t("you’re square")
                         },
                         color = when {
                             net > 0.5 -> ios.green
@@ -131,19 +136,19 @@ fun HomeScreen(
                     )
                 }
                 Hairline(0.dp)
-                MoneyLine("Owed to you", inr(toYou), ios.green)
+                MoneyLine(t("Owed to you"), inr(toYou), ios.green)
                 Hairline()
-                MoneyLine("You owe", inr(youOwe), ios.orange)
+                MoneyLine(t("You owe"), inr(youOwe), ios.orange)
                 if (interestToYou > 0.5) {
                     Hairline()
-                    MoneyLine("Interest to you", inr(interestToYou), ios.secondary)
+                    MoneyLine(t("Interest to you"), inr(interestToYou), ios.secondary)
                 }
                 if (interestYouOwe > 0.5) {
                     Hairline()
-                    MoneyLine("Interest you owe", inr(interestYouOwe), ios.secondary)
+                    MoneyLine(t("Interest you owe"), inr(interestYouOwe), ios.secondary)
                 }
                 Hairline()
-                MoneyLine("Open", open.size.toString(), ios.label)
+                MoneyLine(t("Open"), open.size.toString(), ios.label)
             }
         }
         if (unread > 0) {
@@ -193,17 +198,17 @@ fun EntriesScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val rows = visibleEntries(vm.items, scope, chip, query)
     val chips = buildList {
-        add("all" to "All")
-        add("money" to "Money")
-        add("item" to "Items")
-        if (scope == "open") add("overdue" to "Overdue")
+        add("all" to t("All"))
+        add("money" to t("Money"))
+        add("item" to t("Items"))
+        if (scope == "open") add("overdue" to t("Overdue"))
     }
-    LargeTitlePage("Entries", bottom = 108.dp) {
-        item { IosSearch(query, { query = it }, "Search name or note") }
+    LargeTitlePage(t("Entries"), bottom = 108.dp) {
+        item { IosSearch(query, { query = it }, t("Search name or note")) }
         item { Spacer(Modifier.height(10.dp)) }
         item {
             IosSegmented(
-                listOf("Open", "Settled"),
+                listOf(t("Open"), t("Settled")),
                 selected = if (scope == "open") 0 else 1,
                 onSelect = { index ->
                     val next = if (index == 0) "open" else "done"
@@ -247,16 +252,16 @@ fun PeopleScreen(vm: OwedVm, onOpen: (Person) -> Unit) {
     val people = peopleOf(vm.items).filter { person ->
         query.isBlank() || person.name.contains(query, true) || person.phone.contains(query)
     }
-    LargeTitlePage("People", bottom = 108.dp) {
-        item { IosSearch(query, { query = it }, "Search people") }
+    LargeTitlePage(t("People"), bottom = 108.dp) {
+        item { IosSearch(query, { query = it }, t("Search people")) }
         item { Spacer(Modifier.height(12.dp)) }
         if (people.isEmpty()) {
             item {
                 if (vm.items.isEmpty()) {
                     EmptyBlock(
-                        "No one yet",
-                        "People are grouped from the names on your entries.",
-                        symbol = "•"
+                        t("No one yet"),
+                        t("People are grouped from the names on your entries."),
+                        symbol = null
                     )
                 } else {
                     Text(
@@ -288,11 +293,11 @@ fun AlertsScreen(vm: OwedVm, onOpen: (AppAlert) -> Unit) {
     val unread = vm.alerts.count { !it.read }
     LaunchedEffect(Unit) { vm.reloadAlerts() }
     LargeTitlePage(
-        "Alerts",
+        t("Alerts"),
         trailing = if (unread > 0) {
             {
                 Text(
-                    "Read all",
+                    t("Read all"),
                     color = ios.blue,
                     fontSize = 17.sp,
                     modifier = Modifier.clickable { vm.markAllRead() }.padding(vertical = 6.dp)
@@ -305,7 +310,7 @@ fun AlertsScreen(vm: OwedVm, onOpen: (AppAlert) -> Unit) {
         if (vm.alerts.isEmpty()) {
             item {
                 EmptyBlock(
-                    "No alerts",
+                    t("No alerts"),
                     "Return reminders, payments, and settled entries show up here.",
                     symbol = "!"
                 )
@@ -348,8 +353,33 @@ fun SettingsScreen(vm: OwedVm) {
         !phoneAlerts -> "Phone alerts are blocked, so reminders stay inside Owed until you allow them."
         else -> "Overdue entries remind you once a day until you mark them returned."
     }
-    LargeTitlePage("Settings") {
-        item { SectionLabel("Notifications") }
+    LargeTitlePage(t("Settings")) {
+        item { SectionLabel(t("Language")) }
+        item {
+            Group {
+                Languages.forEachIndexed { index, option ->
+                    if (index > 0) Hairline()
+                    CheckRow(option.native, vm.language == option.code) {
+                        if (vm.language != option.code) {
+                            vm.changeLanguage(option.code)
+                            (ctx as? android.app.Activity)?.recreate()
+                        }
+                    }
+                }
+            }
+        }
+        item { SectionLabel(t("Currency")) }
+        item {
+            Group {
+                Currencies.forEachIndexed { index, option ->
+                    if (index > 0) Hairline()
+                    CheckRow("${currencySymbol(option.code)}  ${t(option.name)}", vm.currency == option.code) {
+                        vm.changeCurrency(option.code)
+                    }
+                }
+            }
+        }
+        item { SectionLabel(t("Notifications")) }
         item {
             Group {
                 SwitchRow(
@@ -407,20 +437,20 @@ fun SettingsScreen(vm: OwedVm) {
                 }
             }
         }
-        item { SectionLabel("Appearance") }
+        item { SectionLabel(t("Appearance")) }
         item {
             Group {
-                listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEachIndexed { index, (id, label) ->
+                listOf("system" to t("System"), "light" to t("Light"), "dark" to t("Dark")).forEachIndexed { index, (id, label) ->
                     if (index > 0) Hairline()
                     CheckRow(label, vm.appearance == id) { vm.changeAppearance(id) }
                 }
             }
         }
-        item { SectionLabel("Data") }
+        item { SectionLabel(t("Data")) }
         item {
             Group {
                 NavRow(
-                    "Share summary",
+                    t("Share summary"),
                     leading = { TintIcon(Icons.Filled.Share, ios.blue) },
                     chevron = true,
                     onClick = {
@@ -432,17 +462,58 @@ fun SettingsScreen(vm: OwedVm) {
                     }
                 )
                 Hairline()
-                NavRow("Saved entries", value = vm.items.size.toString())
+                NavRow(t("Saved entries"), value = vm.items.size.toString())
             }
         }
         item { SectionFooter("Owed keeps this list on your phone. Nothing is uploaded.") }
-        item { SectionLabel("About") }
+        item { SectionLabel(t("About")) }
         item {
             Group {
                 NavRow(
-                    "Version",
+                    t("Version"),
                     value = APP_VERSION,
                     leading = { TintIcon(Icons.Filled.Info, Color(0xFF8E8E93)) }
+                )
+                Hairline()
+                NavRow(t("Developer"), value = DEV_NAME)
+                Hairline()
+                NavRow(
+                    t("Email"),
+                    value = DEV_EMAIL,
+                    chevron = true,
+                    onClick = {
+                        try {
+                            ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$DEV_EMAIL")))
+                        } catch (_: ActivityNotFoundException) {
+                            vm.flash("No mail app", "Write to $DEV_EMAIL from another app.", "info", null)
+                        }
+                    }
+                )
+                Hairline()
+                NavRow(
+                    t("GitHub"),
+                    value = "Soumyadeep765/Owed",
+                    chevron = true,
+                    onClick = {
+                        try {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DEV_GITHUB)))
+                        } catch (_: ActivityNotFoundException) {
+                            vm.flash("Can’t open link", DEV_GITHUB, "info", null)
+                        }
+                    }
+                )
+                Hairline()
+                NavRow(
+                    "Telegram",
+                    value = "@devxy",
+                    chevron = true,
+                    onClick = {
+                        try {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DEV_TELEGRAM)))
+                        } catch (_: ActivityNotFoundException) {
+                            vm.flash("Can’t open link", DEV_TELEGRAM, "info", null)
+                        }
+                    }
                 )
             }
         }
@@ -470,13 +541,13 @@ fun EntryScreen(
     val st = statusOf(e)
     val history = paymentHistory(e)
     val big = if (e.isMoney) inr(if (e.returned) e.amount else owing(e)) else e.desc.ifBlank { "Item" }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         NavBar(e.name, onBack)
         Column(
             Modifier
+                .stretchOverscroll()
                 .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(bottom = 28.dp)
+                .padding(bottom = 16.dp)
         ) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
@@ -632,12 +703,12 @@ fun PersonScreen(
         p.open.isEmpty() -> "All settled"
         else -> "No money open"
     }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         NavBar(p.name, onBack)
         Column(
             Modifier
+                .stretchOverscroll()
                 .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
                 .padding(bottom = 88.dp)
         ) {
             Column(
@@ -714,21 +785,24 @@ fun EditorSheet(
     var picker by remember { mutableStateOf(0) }
     var err by remember { mutableStateOf("") }
     var closing by remember { mutableStateOf(false) }
+    val dismisser = remember { mutableStateOf<() -> Unit>({ onDismiss() }) }
     val decimal = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     fun close(save: Entry?) {
         if (closing) return
         closing = true
         if (save != null) onSave(save)
-        onDismiss()
+        dismisser.value()
     }
-    FastSheet(onDismiss = { close(null) }) {
+    FastSheet(onDismiss = onDismiss) {
+        val hide = LocalDismissSheet.current
+        SideEffect { dismisser.value = hide }
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 12.dp)
         ) {
             Text(
-                if (existing == null) "New" else "Edit",
+                if (existing == null) t("New") else t("Edit"),
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 color = ios.label,
                 fontSize = 28.sp,
@@ -737,14 +811,14 @@ fun EditorSheet(
             )
             Spacer(Modifier.height(8.dp))
             IosSegmented(
-                listOf("I lent", "I borrowed"),
+                listOf(t("I lent"), t("I borrowed")),
                 selected = if (lent) 0 else 1,
                 onSelect = { lent = it == 0 },
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
             Spacer(Modifier.height(8.dp))
             IosSegmented(
-                listOf("Money", "Item"),
+                listOf(t("Money"), t("Item")),
                 selected = if (money) 0 else 1,
                 onSelect = { money = it == 0 },
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -819,7 +893,7 @@ fun EditorSheet(
                 Spacer(Modifier.height(12.dp))
             }
             PrimaryButton(
-                if (existing == null) "Add" else "Save",
+                if (existing == null) t("Add an entry") else t("Save"),
                 {
                     val amt = amount.toDoubleOrNull() ?: 0.0
                     val dueValue = due
@@ -862,7 +936,7 @@ fun EditorSheet(
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Cancel", color = ios.blue, fontSize = 17.sp)
+                Text(t("Cancel"), color = ios.blue, fontSize = 17.sp)
             }
         }
     }
@@ -880,7 +954,7 @@ fun EditorSheet(
                     picker = 0
                 }) { Text("Done") }
             },
-            dismissButton = { TextButton({ picker = 0 }) { Text("Cancel") } }
+            dismissButton = { TextButton({ picker = 0 }) { Text(t("Cancel")) } }
         ) { DatePicker(state) }
     }
 }
@@ -892,22 +966,25 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
     var note by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
     var closing by remember { mutableStateOf(false) }
+    val dismisser = remember { mutableStateOf<() -> Unit>({ onDismiss() }) }
     val typed = amount.toDoubleOrNull() ?: 0.0
     val left = (owing(entry) - typed).coerceAtLeast(0.0)
     fun close(save: Pair<Double, String>?) {
         if (closing) return
         closing = true
         if (save != null) onSave(save.first, save.second)
-        onDismiss()
+        dismisser.value()
     }
-    FastSheet(onDismiss = { close(null) }) {
+    FastSheet(onDismiss = onDismiss) {
+        val hide = LocalDismissSheet.current
+        SideEffect { dismisser.value = hide }
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 12.dp)
         ) {
             Text(
-                "Payment",
+                t("Payment"),
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = ios.label,
                 fontSize = 28.sp,
@@ -931,7 +1008,7 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
             }
             Spacer(Modifier.height(12.dp))
             PrimaryButton(
-                "Save",
+                t("Save"),
                 {
                     val value = amount.toDoubleOrNull()
                     if (value == null || value <= 0) err = "Enter an amount."
@@ -943,7 +1020,7 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
                 Modifier.fillMaxWidth().clickable { close(null) }.padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Cancel", color = ios.blue, fontSize = 17.sp)
+                Text(t("Cancel"), color = ios.blue, fontSize = 17.sp)
             }
         }
     }
@@ -953,15 +1030,19 @@ fun PaymentSheet(entry: Entry, onDismiss: () -> Unit, onSave: (Double, String) -
 fun DeleteSheet(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val ios = LocalIos.current
     var closing by remember { mutableStateOf(false) }
+    val dismisser = remember { mutableStateOf<() -> Unit>({ onDismiss() }) }
     fun close(confirm: Boolean) {
         if (closing) return
         closing = true
         if (confirm) onConfirm()
-        onDismiss()
+        dismisser.value()
     }
-    FastSheet(onDismiss = { close(false) }, container = Color.Transparent, handle = false) {
+    FastSheet(onDismiss = onDismiss, container = Color.Transparent, handle = false) {
+        val hide = LocalDismissSheet.current
+        SideEffect { dismisser.value = hide }
         Column(
             Modifier
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp)
                 .padding(bottom = 10.dp)
         ) {
@@ -993,7 +1074,7 @@ fun DeleteSheet(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
                     Modifier.fillMaxWidth().clickable { close(false) }.padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Cancel", color = ios.blue, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(t("Cancel"), color = ios.blue, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -1197,6 +1278,99 @@ private fun openAppSettings(ctx: Context) {
     ctx.startActivity(
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
     )
+}
+
+@Composable
+fun IntroScreen(language: String, onLanguage: (String) -> Unit, onDone: () -> Unit) {
+    val ios = LocalIos.current
+    var page by remember { mutableIntStateOf(0) }
+    val pages = listOf(
+        t("Keep track of what’s owed") to t("Money and things you lent or borrowed, in one place."),
+        t("Reminders that show up") to t("A nudge before the date, on the day, and again if it’s overdue."),
+        t("Your currency, your language") to t("Amounts and words follow what you choose.")
+    )
+    val (title, body) = pages[page]
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(ios.groupedBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+        ) {
+            Languages.forEach { option ->
+                val on = option.code == language
+                Text(
+                    option.native,
+                    color = if (on) Color.White else ios.label,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (on) ios.blue else ios.fill)
+                        .clickable { onLanguage(option.code) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = 28.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                Modifier.size(88.dp).clip(CircleShape).background(ios.blue),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(46.dp).clip(CircleShape).background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(ios.blue))
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            Text(title, color = ios.label, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+            Spacer(Modifier.height(10.dp))
+            Text(body, color = ios.secondary, fontSize = 17.sp)
+        }
+        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center) {
+            pages.indices.forEach { index ->
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (index == page) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(if (index == page) ios.blue else ios.fill)
+                )
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                t("Skip"),
+                color = ios.blue,
+                fontSize = 17.sp,
+                modifier = Modifier.clickable(onClick = onDone).padding(vertical = 12.dp)
+            )
+            Spacer(Modifier.weight(1f))
+            PrimaryButton(
+                if (page == pages.lastIndex) t("Start") else t("Next"),
+                {
+                    if (page == pages.lastIndex) onDone() else page += 1
+                },
+                Modifier.widthIn(min = 140.dp)
+            )
+        }
+    }
 }
 
 private fun openExactSettings(ctx: Context) {

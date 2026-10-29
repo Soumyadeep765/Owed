@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,8 +17,6 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -47,7 +46,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -69,12 +67,20 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         private set
     var appearance by mutableStateOf(store.appearance())
         private set
+    var language by mutableStateOf(store.language())
+        private set
+    var currency by mutableStateOf(store.currency())
+        private set
+    var introSeen by mutableStateOf(store.introSeen())
+        private set
     var banner by mutableStateOf<Banner?>(null)
         private set
     var pendingOpen by mutableStateOf<String?>(null)
         private set
 
     init {
+        LocaleHub.lang = language
+        LocaleHub.currency = currency
         val added = syncAlerts()
         rescheduleAll()
         when {
@@ -228,6 +234,26 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         store.setAppearance(value)
     }
 
+    fun changeLanguage(code: String) {
+        if (Languages.none { it.code == code } || code == language) return
+        language = code
+        store.setLanguage(code)
+        LocaleHub.lang = code
+        java.util.Locale.setDefault(localeFor(code))
+    }
+
+    fun changeCurrency(code: String) {
+        if (Currencies.none { it.code == code }) return
+        currency = code
+        store.setCurrency(code)
+        LocaleHub.currency = code
+    }
+
+    fun finishIntro() {
+        introSeen = true
+        store.setIntroSeen()
+    }
+
     fun sendTest(ctx: Context) {
         if (!notificationsOn) {
             flash("Alerts are off", "Turn on alerts, then try again.", "soon", null)
@@ -346,6 +372,16 @@ sealed interface Sheet {
 class MainActivity : ComponentActivity() {
     private val vm: OwedVm by viewModels()
 
+    override fun attachBaseContext(newBase: Context) {
+        val code = newBase.getSharedPreferences("owed", Context.MODE_PRIVATE).getString("lang", "en") ?: "en"
+        val locale = localeFor(code)
+        java.util.Locale.setDefault(locale)
+        val config = Configuration(newBase.resources.configuration)
+        config.setLocale(locale)
+        config.setLayoutDirection(locale)
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -430,26 +466,40 @@ fun App(vm: OwedVm) {
             setStack(listOf(Page.Home, Page.Detail(id)))
         }
     }
-    val navPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val page = stack.last()
+    if (!vm.introSeen) {
+        IntroScreen(
+            language = vm.language,
+            onLanguage = { code ->
+                if (code != vm.language) {
+                    vm.changeLanguage(code)
+                    (context as? android.app.Activity)?.recreate()
+                }
+            },
+            onDone = { vm.finishIntro() }
+        )
+        return
+    }
+    val navPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val showAdd = sheet == null && (page is Page.Home || page is Page.Entries || page is Page.People || page is Page.PersonDetail)
     Box(Modifier.fillMaxSize().background(ios.groupedBg)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 AnimatedContent(
                     targetState = page,
                     modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter,
                     transitionSpec = {
                         val easing = FastOutSlowInEasing
                         when (motion) {
-                            1 -> (slideInHorizontally(tween(320, easing = easing)) { it } + fadeIn(tween(180))) togetherWith
-                                (slideOutHorizontally(tween(320, easing = easing)) { -it / 5 } + fadeOut(tween(160)))
-                            -1 -> (slideInHorizontally(tween(320, easing = easing)) { -it / 5 } + fadeIn(tween(180))) togetherWith
-                                (slideOutHorizontally(tween(320, easing = easing)) { it } + fadeOut(tween(160)))
+                            1 -> slideInHorizontally(tween(280, easing = easing)) { it } togetherWith
+                                slideOutHorizontally(tween(280, easing = easing)) { -it / 4 }
+                            -1 -> slideInHorizontally(tween(280, easing = easing)) { -it / 4 } togetherWith
+                                slideOutHorizontally(tween(280, easing = easing)) { it }
                             else -> {
                                 val dir = if (slide >= 0) 1 else -1
-                                (slideInHorizontally(tween(260, easing = easing)) { dir * it / 5 } + fadeIn(tween(180))) togetherWith
-                                    (slideOutHorizontally(tween(220, easing = easing)) { -dir * it / 6 } + fadeOut(tween(140)))
+                                slideInHorizontally(tween(240, easing = easing)) { dir * it / 3 } togetherWith
+                                    slideOutHorizontally(tween(240, easing = easing)) { -dir * it / 3 }
                             }
                         }
                     },
@@ -520,7 +570,7 @@ fun App(vm: OwedVm) {
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = navPad + if (stack.size == 1) 72.dp else 16.dp)
+                    .padding(end = 20.dp, bottom = navPad + if (stack.size == 1) 64.dp else 16.dp)
             )
         }
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {

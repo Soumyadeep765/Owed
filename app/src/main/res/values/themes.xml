@@ -1,3 +1,7 @@
 <resources>
-    <style name="Theme.Owed" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Owed" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_logo</item>
+    </style>
 </resources>

@@ -4,7 +4,9 @@ import android.app.Activity
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -18,6 +20,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -33,6 +36,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -74,15 +78,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -94,15 +108,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class IosPalette(
     val groupedBg: Color,
@@ -162,6 +177,7 @@ private val DarkIos = IosPalette(
 )
 
 val LocalIos = staticCompositionLocalOf { LightIos }
+val LocalDismissSheet = staticCompositionLocalOf<() -> Unit> { {} }
 
 private val AvatarColors = listOf(
     Color(0xFF007AFF),
@@ -303,7 +319,7 @@ fun LargeTitlePage(
         }
         LazyColumn(
             state = list,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.stretchOverscroll().fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottom)
         ) {
             item {
@@ -331,22 +347,22 @@ fun NavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)
             Row(
                 Modifier
                     .align(Alignment.CenterStart)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .fillMaxHeight()
                     .clickable {
                         tap()
                         onBack()
                     }
-                    .padding(start = 8.dp, end = 10.dp),
+                    .padding(start = 8.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
                     tint = ios.blue,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
-                Text("Back", color = ios.blue, fontSize = 17.sp)
+                Spacer(Modifier.width(2.dp))
+                Text(t("Back"), color = ios.blue, fontSize = 17.sp, lineHeight = 22.sp)
             }
             Text(
                 title,
@@ -359,12 +375,14 @@ fun NavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 22.sp
             )
             if (trailing != null) {
-                Box(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)) { trailing() }
+                Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) { trailing() }
             }
         }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(ios.separator))
     }
 }
 
@@ -384,36 +402,29 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
                 spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
                 label = "tab"
             )
-            Box(Modifier.fillMaxWidth().height(52.dp)) {
+            Box(Modifier.fillMaxWidth().height(50.dp)) {
                 Box(
                     Modifier
                         .offset(x = x)
                         .width(tabWidth)
-                        .height(52.dp)
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                        .background(ios.blue.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+                        .height(50.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .background(ios.blue.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
                 )
-                Row(Modifier.fillMaxWidth().height(52.dp)) {
+                Row(Modifier.fillMaxWidth().height(50.dp)) {
                     Tab.entries.forEach { tab ->
                         val on = tab == selected
                         val press = remember(tab) { MutableInteractionSource() }
                         val pressed by press.collectIsPressedAsState()
                         val scale by animateFloatAsState(
-                            when {
-                                pressed -> 0.86f
-                                on -> 1.08f
-                                else -> 1f
-                            },
-                            spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            ),
+                            if (pressed) 0.92f else 1f,
+                            spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
                             label = "tap"
                         )
                         Column(
                             Modifier
                                 .weight(1f)
-                                .height(52.dp)
+                                .height(50.dp)
                                 .graphicsLayer {
                                     scaleX = scale
                                     scaleY = scale
@@ -455,7 +466,7 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
                             }
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                tab.label,
+                                t(tab.label),
                                 color = if (on) ios.blue else ios.secondary,
                                 fontSize = 10.sp,
                                 fontWeight = if (on) FontWeight.Medium else FontWeight.Normal
@@ -468,6 +479,38 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
     }
 }
 
+fun Modifier.stretchOverscroll(): Modifier = composed {
+    var pull by remember { mutableFloatStateOf(0f) }
+    val connection = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+                pull += available.y * 0.45f
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (pull == 0f) return Velocity.Zero
+                val start = pull
+                Animatable(start).animateTo(
+                    0f,
+                    spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
+                ) { pull = value }
+                pull = 0f
+                return available
+            }
+        }
+    }
+    this
+        .nestedScroll(connection)
+        .graphicsLayer {
+            val damp = pull.coerceIn(-140f, 140f)
+            translationY = damp * 0.35f
+            scaleY = 1f + (kotlin.math.abs(damp) / size.height.coerceAtLeast(1f)) * 0.45f
+            transformOrigin = TransformOrigin(0.5f, if (pull >= 0f) 0f else 1f)
+        }
+}
+
 @Composable
 fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val ios = LocalIos.current
@@ -475,9 +518,9 @@ fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        if (pressed) 0.9f else 1f,
+        if (pressed) 0.92f else 1f,
         spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-        label = "fab"
+        label = "add"
     )
     Box(
         modifier
@@ -486,7 +529,7 @@ fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(8.dp, CircleShape)
+            .shadow(6.dp, CircleShape)
             .clip(CircleShape)
             .background(ios.blue)
             .clickable(interactionSource = press, indication = null) {
@@ -495,7 +538,25 @@ fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
             },
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Filled.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(28.dp))
+        Icon(Icons.Filled.Add, contentDescription = t("Add an entry"), tint = Color.White, modifier = Modifier.size(28.dp))
+    }
+}
+
+fun PlusButton(onClick: () -> Unit) {
+    val ios = LocalIos.current
+    val tap = rememberTap()
+    Box(
+        Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(ios.blue)
+            .clickable {
+                tap()
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -507,17 +568,60 @@ fun FastSheet(
     sheetContent: @Composable ColumnScope.() -> Unit
 ) {
     val ios = LocalIos.current
-    var shown by remember { mutableStateOf(false) }
-    val scrim by animateFloatAsState(if (shown) 1f else 0f, tween(160), label = "scrim")
-    LaunchedEffect(Unit) { shown = true }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        val dialogView = LocalView.current
-        SideEffect {
-            (dialogView.parent as? DialogWindowProvider)?.window?.setWindowAnimations(0)
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val shift = remember { Animatable(2200f) }
+    val pull = remember { mutableFloatStateOf(0f) }
+    var closing by remember { mutableStateOf(false) }
+    val threshold = with(density) { 120.dp.toPx() }
+    fun closeSheet() {
+        if (closing) return
+        closing = true
+        scope.launch {
+            try {
+                val from = shift.value + pull.floatValue
+                pull.floatValue = 0f
+                shift.snapTo(from)
+                shift.animateTo(2200f, tween(150, easing = FastOutSlowInEasing))
+            } finally {
+                onDismiss()
+            }
         }
+    }
+    LaunchedEffect(Unit) {
+        shift.animateTo(0f, tween(160, easing = FastOutSlowInEasing))
+    }
+    BackHandler(enabled = !closing) { closeSheet() }
+    val connection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y >= 0f || pull.floatValue <= 0f) {
+                    return Offset.Zero
+                }
+                val used = available.y.coerceAtLeast(-pull.floatValue)
+                pull.floatValue += used
+                return Offset(0f, used)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                pull.floatValue += available.y
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                val dragged = pull.floatValue
+                if (dragged <= 0f) return Velocity.Zero
+                pull.floatValue = 0f
+                shift.snapTo(shift.value + dragged)
+                if (shift.value > threshold) closeSheet() else shift.animateTo(0f, tween(140, easing = FastOutSlowInEasing))
+                return available
+            }
+        }
+    }
+    val travel = (shift.value + pull.floatValue).coerceAtLeast(0f)
+    val scrim = (1f - travel / 700f).coerceIn(0f, 1f)
+    CompositionLocalProvider(LocalDismissSheet provides { closeSheet() }) {
         Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier
@@ -527,36 +631,63 @@ fun FastSheet(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) { onDismiss() }
+                    ) { closeSheet() }
             )
-            AnimatedVisibility(
-                visible = shown,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(140)),
-                exit = slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(120))
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .offset { IntOffset(0, travel.roundToInt()) }
+                    .nestedScroll(connection)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .background(container)
+                    .navigationBarsPadding()
+                    .imePadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
+                Box(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                        .background(container)
-                        .navigationBarsPadding()
-                        .imePadding(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    content = {
-                        if (handle) {
-                            Box(
-                                Modifier
-                                    .padding(top = 8.dp, bottom = 4.dp)
-                                    .width(36.dp)
-                                    .height(5.dp)
-                                    .clip(CircleShape)
-                                    .background(ios.tertiary)
+                        .pointerInput(threshold) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { _, dy ->
+                                    pull.floatValue = (pull.floatValue + dy).coerceAtLeast(-shift.value)
+                                },
+                                onDragEnd = {
+                                    val dragged = pull.floatValue
+                                    pull.floatValue = 0f
+                                    scope.launch {
+                                        shift.snapTo((shift.value + dragged).coerceAtLeast(0f))
+                                        if (shift.value > threshold) closeSheet()
+                                        else shift.animateTo(0f, tween(140, easing = FastOutSlowInEasing))
+                                    }
+                                },
+                                onDragCancel = {
+                                    val dragged = pull.floatValue
+                                    pull.floatValue = 0f
+                                    scope.launch {
+                                        shift.snapTo((shift.value + dragged).coerceAtLeast(0f))
+                                        shift.animateTo(0f, tween(140, easing = FastOutSlowInEasing))
+                                    }
+                                }
                             )
                         }
-                        sheetContent()
+                        .padding(top = 8.dp, bottom = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (handle) {
+                        Box(
+                            Modifier
+                                .width(36.dp)
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(ios.tertiary)
+                        )
+                    } else {
+                        Spacer(Modifier.height(6.dp))
                     }
-                )
+                }
+                sheetContent()
             }
         }
     }
@@ -700,36 +831,51 @@ fun IosSearch(value: String, onValue: (String) -> Unit, placeholder: String = "S
 fun IosSegmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val ios = LocalIos.current
     val tap = rememberTap()
-    Row(
+    BoxWithConstraints(
         modifier
             .clip(RoundedCornerShape(9.dp))
             .background(ios.fill)
             .padding(2.dp)
+            .height(32.dp)
     ) {
-        options.forEachIndexed { index, label ->
-            val on = index == selected
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(if (on) ios.thumb else Color.Transparent)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        tap()
-                        onSelect(index)
-                    }
-                    .padding(vertical = 7.dp, horizontal = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    label,
-                    color = ios.label,
-                    fontSize = 13.sp,
-                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1
-                )
+        val count = options.size.coerceAtLeast(1)
+        val segment = maxWidth / count
+        val x by animateDpAsState(
+            segment * selected.coerceIn(0, count - 1),
+            spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium),
+            label = "segment"
+        )
+        Box(
+            Modifier
+                .offset(x = x)
+                .width(segment)
+                .fillMaxHeight()
+                .background(ios.thumb, RoundedCornerShape(7.dp))
+        )
+        Row(Modifier.fillMaxSize()) {
+            options.forEachIndexed { index, label ->
+                val on = index == selected
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            tap()
+                            onSelect(index)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = ios.label,
+                        fontSize = 13.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
@@ -1012,19 +1158,21 @@ private fun BannerCard(banner: Banner, onClick: () -> Unit) {
 }
 
 @Composable
-fun EmptyBlock(title: String, body: String, action: String? = null, onAction: (() -> Unit)? = null, symbol: String = "₹") {
+fun EmptyBlock(title: String, body: String, action: String? = null, onAction: (() -> Unit)? = null, symbol: String? = "₹") {
     val ios = LocalIos.current
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            Modifier.size(64.dp).clip(CircleShape).background(ios.fill),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(symbol, color = ios.blue, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        if (symbol != null) {
+            Box(
+                Modifier.size(64.dp).clip(CircleShape).background(ios.fill),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(symbol, color = ios.blue, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(14.dp))
         }
-        Spacer(Modifier.height(14.dp))
         Text(title, color = ios.label, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(body, color = ios.secondary, fontSize = 15.sp, textAlign = TextAlign.Center)
