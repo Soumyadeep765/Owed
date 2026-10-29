@@ -493,7 +493,7 @@ fun SettingsScreen(vm: OwedVm) {
                         current,
                         listOf("-1" to t("Default SIM")) + sims.map { it.first.toString() to it.second },
                         vm.textSim.toString()
-                    ) { vm.setTextSim(it.toInt()) }
+                    ) { vm.chooseSim(it.toInt()) }
                 }
                 if (vm.textsOn && PhoneTexts.allowed(ctx)) {
                     Hairline()

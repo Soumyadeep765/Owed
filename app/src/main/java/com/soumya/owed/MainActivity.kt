@@ -292,7 +292,7 @@ class OwedVm(app: Application) : AndroidViewModel(app) {
         store.setTextsEnabled(on)
     }
 
-    fun setTextSim(id: Int) {
+    fun chooseSim(id: Int) {
         textSim = id
         store.setTextSim(id)
     }
