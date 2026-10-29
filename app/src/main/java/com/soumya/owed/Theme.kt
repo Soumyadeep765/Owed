@@ -542,6 +542,7 @@ fun AddFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
 fun PlusButton(onClick: () -> Unit) {
     val ios = LocalIos.current
     val tap = rememberTap()
