@@ -10,7 +10,7 @@ The first time you open it, you pick a language, walk through a short intro, the
 
 ## Download
 
-[Owed 1.2 APK](https://github.com/Soumyadeep765/Owed/releases/download/v1.2/owed-1.2.apk) for Android 8.0 or newer.
+[Owed 1.2 APK](https://github.com/Soumyadeep765/Owed/releases/download/v1.2/owed-1.2.apk) is blocked by Google Play Protect because that build asked to send SMS. Install the next release instead: [Releases](https://github.com/Soumyadeep765/Owed/releases). Android 8.0 or newer.
 
 ## What you can do
 
@@ -25,7 +25,7 @@ The first time you open it, you pick a language, walk through a short intro, the
 - Put a home screen widget on the two balances
 - Long-press the icon for Lent and Borrowed
 - Slide an in-app alert away to close it
-- Optionally text a reminder from this phone’s SIM. It stays off until you allow it
+- Text or call someone from their entry. The message opens in your own messages app
 
 Amounts follow the currency you choose. Words follow the language. You can change either later in Settings. Appearance can follow the phone, or stay light or dark.
 
