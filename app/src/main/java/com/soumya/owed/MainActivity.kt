@@ -18,9 +18,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.using
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -53,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -524,13 +528,16 @@ fun App(vm: OwedVm) {
     val page = stack.last()
     var startStep by rememberSaveable { mutableIntStateOf(0) }
     if (!vm.introSeen) {
-        if (startStep == 0) {
-            LanguagePick { code ->
+        when (startStep) {
+            0 -> LanguagePick { code ->
                 vm.changeLanguage(code)
                 startStep = 1
             }
-        } else {
-            IntroScreen(onDone = { vm.finishIntro() })
+            1 -> IntroScreen(onDone = { startStep = 2 })
+            else -> CurrencyPick { code ->
+                vm.changeCurrency(code)
+                vm.finishIntro()
+            }
         }
         return
     }
@@ -538,24 +545,21 @@ fun App(vm: OwedVm) {
     val showAdd = sheet == null && (page is Page.Home || page is Page.Entries || page is Page.People || page is Page.PersonDetail)
     Box(Modifier.fillMaxSize().background(ios.groupedBg)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                 AnimatedContent(
                     targetState = page,
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.TopCenter,
                     transitionSpec = {
                         val easing = FastOutSlowInEasing
-                        when (motion) {
-                            1 -> slideInHorizontally(tween(280, easing = easing)) { it } togetherWith
-                                slideOutHorizontally(tween(280, easing = easing)) { -it / 4 }
-                            -1 -> slideInHorizontally(tween(280, easing = easing)) { -it / 4 } togetherWith
-                                slideOutHorizontally(tween(280, easing = easing)) { it }
-                            else -> {
-                                val dir = if (slide >= 0) 1 else -1
-                                slideInHorizontally(tween(240, easing = easing)) { dir * it / 3 } togetherWith
-                                    slideOutHorizontally(tween(240, easing = easing)) { -dir * it / 3 }
-                            }
+                        val change = when (motion) {
+                            1 -> (slideInHorizontally(tween(220, easing = easing)) { it } + fadeIn(tween(140))) togetherWith
+                                (slideOutHorizontally(tween(180, easing = easing)) { -it / 6 } + fadeOut(tween(120)))
+                            -1 -> (slideInHorizontally(tween(200, easing = easing)) { -it / 6 } + fadeIn(tween(120))) togetherWith
+                                (slideOutHorizontally(tween(200, easing = easing)) { it } + fadeOut(tween(140)))
+                            else -> fadeIn(tween(140)) togetherWith fadeOut(tween(90))
                         }
+                        change.apply { targetContentZIndex = if (motion == -1) 0f else 1f } using null
                     },
                     label = "page"
                 ) { current ->

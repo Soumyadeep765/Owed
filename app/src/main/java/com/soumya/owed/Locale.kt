@@ -252,6 +252,7 @@ private val Pack: Map<String, Map<String, String>> = mapOf(
         "Japanese yen" to "Japanese yen",
         "Read all" to "Sab padh lo",
         "Choose a language" to "Bhasha chuno",
+        "Choose a currency" to "Currency chuno",
         "Continue" to "Aage badho",
         "About" to "About",
         "Version" to "Version",

@@ -394,23 +394,8 @@ fun TabBar(selected: Tab, unread: Int, onSelect: (Tab) -> Unit) {
     val tap = rememberTap()
     Column(Modifier.fillMaxWidth().background(ios.tabBar)) {
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(ios.separator))
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = bottom)) {
-            val count = Tab.entries.size.coerceAtLeast(1)
-            val tabWidth = maxWidth / count
-            val index = Tab.entries.indexOf(selected).coerceAtLeast(0)
-            val x by animateDpAsState(
-                tabWidth * index,
-                spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
-                label = "tab"
-            )
-            Box(Modifier.fillMaxWidth().height(50.dp)) {
-                Box(
-                    Modifier
-                        .offset(x = x + (tabWidth - 32.dp) / 2, y = 4.dp)
-                        .size(32.dp)
-                        .background(ios.blue.copy(alpha = 0.14f), CircleShape)
-                )
-                Row(Modifier.fillMaxWidth().height(50.dp)) {
+        Box(Modifier.fillMaxWidth().padding(bottom = bottom)) {
+            Row(Modifier.fillMaxWidth().height(50.dp)) {
                     Tab.entries.forEach { tab ->
                         val on = tab == selected
                         val press = remember(tab) { MutableInteractionSource() }

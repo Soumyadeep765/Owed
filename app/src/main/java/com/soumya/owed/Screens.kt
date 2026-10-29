@@ -1326,6 +1326,49 @@ fun LanguagePick(onContinue: (String) -> Unit) {
 }
 
 @Composable
+fun CurrencyPick(onContinue: (String) -> Unit) {
+    val ios = LocalIos.current
+    var picked by remember { mutableStateOf<String?>(null) }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(ios.groupedBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Text(
+            t("Choose a currency"),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
+            color = ios.label,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.4).sp
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 12.dp)
+        ) {
+            Group {
+                Currencies.forEachIndexed { index, option ->
+                    if (index > 0) Hairline()
+                    val label = "${currencySymbol(option.code)}  ${t(option.name)}"
+                    CheckRow(label, picked == option.code) { picked = option.code }
+                }
+            }
+        }
+        AnimatedVisibility(visible = picked != null) {
+            PrimaryButton(
+                t("Continue"),
+                { picked?.let(onContinue) },
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun IntroScreen(onDone: () -> Unit) {
     val ios = LocalIos.current
     val scope = rememberCoroutineScope()
