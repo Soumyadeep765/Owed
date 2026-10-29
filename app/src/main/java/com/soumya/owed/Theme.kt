@@ -65,6 +65,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -955,6 +957,48 @@ fun TintIcon(icon: ImageVector, background: Color) {
 }
 
 @Composable
+fun PickRow(
+    title: String,
+    value: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    val ios = LocalIos.current
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { open = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, modifier = Modifier.weight(1f), color = ios.label, fontSize = 17.sp)
+            Text(
+                value,
+                color = ios.blue,
+                fontSize = 17.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 190.dp)
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (id, label) ->
+                DropdownMenuItem(
+                    text = { Text(label, color = if (id == selected) ios.blue else ios.label) },
+                    onClick = {
+                        open = false
+                        onSelect(id)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun CheckRow(title: String, selected: Boolean, onClick: () -> Unit) {
     val ios = LocalIos.current
     val tap = rememberTap()
@@ -1143,18 +1187,23 @@ private fun BannerCard(banner: Banner, onClick: () -> Unit) {
 }
 
 @Composable
-fun EmptyBlock(title: String, body: String, action: String? = null, onAction: (() -> Unit)? = null, symbol: String? = "₹") {
+fun EmptyBlock(title: String, body: String, action: String? = null, onAction: (() -> Unit)? = null, symbol: String? = "\u0000") {
     val ios = LocalIos.current
+    val mark = when (symbol) {
+        null -> null
+        "\u0000" -> currencySymbol(LocaleHub.currency)
+        else -> symbol
+    }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (symbol != null) {
+        if (mark != null) {
             Box(
                 Modifier.size(64.dp).clip(CircleShape).background(ios.fill),
                 contentAlignment = Alignment.Center
             ) {
-                Text(symbol, color = ios.blue, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(mark, color = ios.blue, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(14.dp))
         }

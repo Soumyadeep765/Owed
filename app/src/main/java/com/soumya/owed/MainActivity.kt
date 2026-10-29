@@ -759,12 +759,17 @@ fun App(vm: OwedVm) {
                     },
                     label = "page"
                 ) { current ->
+                val speak = vm.language
+                val payWith = vm.currency
+                if (speak.isEmpty() && payWith.isEmpty()) return@AnimatedContent
                 when (current) {
                     Page.Home -> HomeScreen(
                         vm = vm,
                         onAdd = { sheet = Sheet.Add() },
                         onOpen = { push(Page.Detail(it.id)) },
                         onEntries = { select(Tab.Entries) },
+                        onPeople = { select(Tab.People) },
+                        onPerson = { push(Page.PersonDetail(it.key)) },
                         onOverdue = {
                             scope = "open"
                             chip = "overdue"

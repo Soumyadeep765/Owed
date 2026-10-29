@@ -91,6 +91,8 @@ fun HomeScreen(
     onAdd: () -> Unit,
     onOpen: (Entry) -> Unit,
     onEntries: () -> Unit,
+    onPeople: () -> Unit,
+    onPerson: (Person) -> Unit,
     onOverdue: () -> Unit,
     onAlerts: () -> Unit
 ) {
@@ -110,6 +112,11 @@ fun HomeScreen(
     val net = toYou - youOwe
     val interestToYou = open.filter { it.isMoney && it.direction == LENT }.sumOf { interest(it) }
     val interestYouOwe = open.filter { it.isMoney && it.direction == BORROWED }.sumOf { interest(it) }
+    val people = peopleOf(vm.items)
+    val itemsOpen = open.count { !it.isMoney }
+    val settled = vm.items.count { it.returned }
+    val next = open.filter { it.due != null }.minByOrNull { it.due ?: Long.MAX_VALUE }
+    val nextIsListed = next != null && (overdue.any { it.id == next.id } || soon.any { it.id == next.id })
 
     LargeTitlePage("Owed", bottom = 108.dp) {
         if (vm.items.isEmpty()) {
@@ -125,7 +132,11 @@ fun HomeScreen(
         item {
             Group {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)) {
-                    Text(t("Net"), color = ios.secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(t("Net"), color = ios.secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.weight(1f))
+                        Text(vm.currency, color = ios.blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                     Text(
                         inr(if (net < 0) -net else net),
                         color = ios.label,
@@ -159,16 +170,28 @@ fun HomeScreen(
                     Hairline()
                     MoneyLine(t("Interest you owe"), inr(interestYouOwe), ios.secondary)
                 }
-                Hairline()
-                MoneyLine(t("Open"), open.size.toString(), ios.label)
             }
+        }
+        item { Spacer(Modifier.height(12.dp)) }
+        item {
+            Group {
+                Row(Modifier.fillMaxWidth()) {
+                    HomeStat(people.count { it.open.isNotEmpty() }.toString(), t("People"), onPeople, Modifier.weight(1f))
+                    HomeStat(itemsOpen.toString(), t("Items"), onEntries, Modifier.weight(1f))
+                    HomeStat(settled.toString(), t("Settled"), onEntries, Modifier.weight(1f))
+                }
+            }
+        }
+        if (next != null && !nextIsListed) {
+            item { SectionLabel(t("Next"), t("See all"), onEntries) }
+            item { EntryGroup(listOf(next), onOpen) }
         }
         if (unread > 0) {
             item { Spacer(Modifier.height(12.dp)) }
             item {
                 Group {
                     NavRow(
-                        "Alerts",
+                        t("Alerts"),
                         value = unread.toString(),
                         subtitle = vm.alerts.firstOrNull { !it.read }?.title,
                         leading = { TintIcon(Icons.Filled.Notifications, ios.orange) },
@@ -179,19 +202,31 @@ fun HomeScreen(
             }
         }
         if (overdue.isNotEmpty()) {
-            item { SectionLabel("Overdue", "See all", onOverdue) }
+            item { SectionLabel(t("Overdue"), t("See all"), onOverdue) }
             item { EntryGroup(overdue.take(4), onOpen) }
         }
         if (soon.isNotEmpty()) {
-            item { SectionLabel("Due soon", "See all", onEntries) }
+            item { SectionLabel(t("Due soon"), t("See all"), onEntries) }
             item { EntryGroup(soon.take(4), onOpen) }
         }
         if (rest.isNotEmpty()) {
-            item { SectionLabel(if (soon.isEmpty() && overdue.isEmpty()) "Open" else "Also open", "See all", onEntries) }
+            item { SectionLabel(if (soon.isEmpty() && overdue.isEmpty()) t("Open") else t("Also open"), t("See all"), onEntries) }
             item { EntryGroup(rest.take(4), onOpen) }
         }
+        val activePeople = people.filter { it.open.isNotEmpty() }.take(3)
+        if (activePeople.isNotEmpty()) {
+            item { SectionLabel(t("People"), t("See all"), onPeople) }
+            item {
+                Group {
+                    activePeople.forEachIndexed { index, person ->
+                        PersonRow(person) { onPerson(person) }
+                        if (index != activePeople.lastIndex) Hairline(66.dp)
+                    }
+                }
+            }
+        }
         if (open.isEmpty()) {
-            item { SectionFooter("Everything has been marked returned.") }
+            item { SectionFooter(t("Everything has been marked returned.")) }
         }
         }
     }
@@ -237,14 +272,14 @@ fun EntriesScreen(
             item {
                 if (vm.items.isEmpty()) {
                     EmptyBlock(
-                        "No entries yet",
-                        "Add money or an item, with a return date if you want a reminder.",
-                        "Add an entry",
+                        t("No entries yet"),
+                        t("Add money or an item, with a return date if you want a reminder."),
+                        t("Add an entry"),
                         onAdd
                     )
                 } else {
                     Text(
-                        "Nothing matches.",
+                        t("Nothing matches."),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
                         color = LocalIos.current.secondary,
                         fontSize = 16.sp,
@@ -277,7 +312,7 @@ fun PeopleScreen(vm: OwedVm, onOpen: (Person) -> Unit) {
                     )
                 } else {
                     Text(
-                        "No matches.",
+                        t("No matches."),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
                         color = LocalIos.current.secondary,
                         fontSize = 16.sp,
@@ -368,24 +403,26 @@ fun SettingsScreen(vm: OwedVm) {
     LargeTitlePage(t("Settings")) {
         item { SectionLabel(t("Language")) }
         item {
+            val current = Languages.find { it.code == vm.language }
             Group {
-                Languages.forEachIndexed { index, option ->
-                    if (index > 0) Hairline()
-                    CheckRow(option.native, vm.language == option.code) {
-                        vm.changeLanguage(option.code)
-                    }
-                }
+                PickRow(
+                    t("Language"),
+                    current?.native ?: "English",
+                    Languages.map { it.code to it.native },
+                    vm.language
+                ) { vm.changeLanguage(it) }
             }
         }
         item { SectionLabel(t("Currency")) }
         item {
+            val current = Currencies.find { it.code == vm.currency }
             Group {
-                Currencies.forEachIndexed { index, option ->
-                    if (index > 0) Hairline()
-                    CheckRow("${currencySymbol(option.code)}  ${t(option.name)}", vm.currency == option.code) {
-                        vm.changeCurrency(option.code)
-                    }
-                }
+                PickRow(
+                    t("Currency"),
+                    "${currencySymbol(vm.currency)}  ${current?.let { t(it.name) } ?: vm.currency}",
+                    Currencies.map { it.code to "${currencySymbol(it.code)}  ${t(it.name)}" },
+                    vm.currency
+                ) { vm.changeCurrency(it) }
             }
         }
         item { SectionLabel(t("Notifications")) }
@@ -1267,10 +1304,10 @@ private fun EntryRow(entry: Entry, onClick: () -> Unit) {
 private fun PersonRow(person: Person, onClick: () -> Unit) {
     val ios = LocalIos.current
     val subtitle = when {
-        person.open.isEmpty() -> "All settled"
-        person.net > 0.5 -> "Owes you · ${person.open.size} open"
-        person.net < -0.5 -> "You owe · ${person.open.size} open"
-        else -> "${person.open.size} open"
+        person.open.isEmpty() -> t("All settled")
+        person.net > 0.5 -> t("Owes you · %d open", person.open.size)
+        person.net < -0.5 -> t("You owe · %d open", person.open.size)
+        else -> t("%d open", person.open.size)
     }
     val value = when {
         person.net > 0.5 -> inr(person.net)
@@ -1336,6 +1373,18 @@ private fun AlertRow(alert: AppAlert, onClick: () -> Unit) {
 }
 
 @Composable
+private fun HomeStat(value: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val ios = LocalIos.current
+    Column(
+        modifier.clickable(onClick = onClick).padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, color = ios.label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = ios.secondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 private fun MoneyLine(label: String, value: String, color: Color) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
@@ -1369,10 +1418,10 @@ private fun visibleEntries(items: List<Entry>, scope: String, chip: String, quer
 }
 
 private fun rowKind(entry: Entry): String = when {
-    entry.isMoney && entry.direction == LENT -> "Lent"
-    entry.isMoney && entry.direction == BORROWED -> "Borrowed"
-    entry.direction == LENT -> "Your item"
-    else -> "Their item"
+    entry.isMoney && entry.direction == LENT -> t("Lent")
+    entry.isMoney && entry.direction == BORROWED -> t("Borrowed")
+    entry.direction == LENT -> t("Your item")
+    else -> t("Their item")
 }
 
 private fun personMessage(person: Person): String {

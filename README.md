@@ -1,30 +1,41 @@
 # Owed
 
-Owed is an Android app for money and things you have lent or borrowed. It stays on the phone. Nothing is uploaded.
+<p align="center">
+  <img src="docs/owed-logo.png" width="128" alt="Owed">
+</p>
 
-You can track both directions, record payments, group people, and get a reminder before a return date, on the day, and again if it is overdue.
+Owed is an Android app for money and things you have lent or borrowed. You can record both directions, payments, and a return date. The list stays on the phone. There is no account and no server.
 
-## Features
+The first time you open it, you pick a language, walk through a short intro, then pick a currency. After that the home screen shows the balance.
 
-- Home balance for what is owed to you and what you owe
-- Entries for money and items, with search and filters
-- People, grouped from the names on your entries
-- In-app alerts and system notifications
-- Multiple currencies
-- Languages, including Hinglish
-- Light, dark, and system appearance
-- Data kept in on-device storage
-- Backup file you can save and restore
-- Home screen widget for the two balances
-- Phone lock before the balances show
-- Pick a person from contacts
-- Settle a reminder from the notification
-- Home screen shortcuts for lent and borrowed
+## What you can do
+
+- See what is owed to you, what you owe, and the net
+- Add money or an item, as lent or borrowed, with a note and a return date
+- Record a payment, or mark the entry returned
+- Search and filter entries, and group them by person
+- Get a reminder before the date, on the day, and again if it is overdue
+- Settle that reminder from the notification
+- Pick a name from your contacts
+- Save a backup file and restore it later
+- Put a home screen widget on the two balances
+- Lock the app with the phone’s face, fingerprint, or PIN
+- Long-press the icon for Lent and Borrowed
+
+Amounts follow the currency you choose. Words follow the language. You can change either later in Settings. Appearance can follow the phone, or stay light or dark.
+
+## Languages
+
+English, हिन्दी, Hinglish, Español, Français, Português, Deutsch, العربية, 中文, বাংলা.
+
+## Currencies
+
+INR, USD, EUR, GBP, JPY, AUD, CAD, CNY, AED, SAR, SGD, BDT, NPR, KRW, BRL, CHF.
 
 ## Requirements
 
-- Android 8.0 (API 26) or newer
-- JDK 17
+- Android 8.0 or newer
+- JDK 17 to build
 
 ## Build
 
@@ -32,15 +43,17 @@ You can track both directions, record payments, group people, and get a reminder
 gradle assembleDebug
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The APK is `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions builds the same APK on every push and uploads it as an artifact.
 
-Debug and release builds are signed with `app/owed-upload.p12` (alias `owed`). GitHub Actions uses that same key, so raising `versionCode` in `app/build.gradle.kts` lets a new APK install over the previous one. This key is in the repository so the builds stay updatable. It is not a private Play upload key.
+Debug and release builds are signed with `app/owed-upload.p12` (alias `owed`). That file is in the repository so every Actions build uses the same key. Raise `versionCode` in `app/build.gradle.kts` and the new APK can install over the previous one.
 
-If a phone already has an older Owed APK from a GitHub run that used a one-off debug key, uninstall that copy once. After that, later builds update in place.
+This key is for these updateable builds. It is not a private Play upload key. Anyone who can read the repository can sign with it.
+
+If a phone already has an older Owed APK from a GitHub run that used a one-off debug key, uninstall that copy once. After the signed build is installed, later builds update in place.
 
 ## Privacy
 
-Entries, payments, and alerts are stored on the device. Owed does not have an account or a server.
+Entries, payments, alerts, and settings are stored on the device. A backup is a file you save yourself. Owed does not upload it.
 
 ## Developer
 

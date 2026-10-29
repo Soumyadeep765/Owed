@@ -130,11 +130,31 @@ fun inr(v: Double): String {
         "INR" -> 0
         else -> currency.defaultFractionDigits.coerceIn(0, 2)
     }
-    val fmt = NumberFormat.getCurrencyInstance(Locale.getDefault())
+    val fmt = NumberFormat.getCurrencyInstance(moneyLocale(currency.currencyCode))
     fmt.currency = currency
     fmt.minimumFractionDigits = digits
     fmt.maximumFractionDigits = digits
     return fmt.format(v)
+}
+
+private fun moneyLocale(code: String): Locale = when (code) {
+    "INR" -> Locale("en", "IN")
+    "USD" -> Locale.US
+    "EUR" -> Locale.GERMANY
+    "GBP" -> Locale.UK
+    "JPY" -> Locale.JAPAN
+    "AUD" -> Locale("en", "AU")
+    "CAD" -> Locale.CANADA
+    "CNY" -> Locale.CHINA
+    "AED" -> Locale("en", "AE")
+    "SAR" -> Locale("en", "SA")
+    "SGD" -> Locale("en", "SG")
+    "BDT" -> Locale("en", "BD")
+    "NPR" -> Locale("en", "NP")
+    "KRW" -> Locale.KOREA
+    "BRL" -> Locale("pt", "BR")
+    "CHF" -> Locale("de", "CH")
+    else -> Locale.US
 }
 
 fun daysBetween(a: Long, b: Long): Long = ChronoUnit.DAYS.between(ld(a), ld(b))
