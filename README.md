@@ -10,7 +10,7 @@ The first time you open it, you pick a language, walk through a short intro, the
 
 ## Download
 
-[Owed 1.2 APK](https://github.com/Soumyadeep765/Owed/releases/download/v1.2/owed-1.2.apk) is blocked by Google Play Protect because that build asked to send SMS. Install the next release instead: [Releases](https://github.com/Soumyadeep765/Owed/releases). Android 8.0 or newer.
+[Owed 1.3 APK](https://github.com/Soumyadeep765/Owed/releases/download/v1.3/owed.apk) for Android 8.0 or newer.
 
 ## What you can do
 
