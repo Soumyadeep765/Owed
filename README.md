@@ -1,8 +1,8 @@
-# Owed
-
 <p align="center">
   <img src="docs/owed-logo.png" width="128" alt="Owed">
 </p>
+
+# Owed
 
 Owed is an Android app for money and things you have lent or borrowed. You can record both directions, payments, and a return date. The list stays on the phone. There is no account and no server.
 
