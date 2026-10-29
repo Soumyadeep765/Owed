@@ -8,6 +8,10 @@ Owed is an Android app for money and things you have lent or borrowed. You can r
 
 The first time you open it, you pick a language, walk through a short intro, then pick a currency. After that the home screen shows the balance.
 
+## Download
+
+[Owed 1.2 APK](https://github.com/Soumyadeep765/Owed/releases/download/v1.2/owed-1.2.apk) for Android 8.0 or newer.
+
 ## What you can do
 
 - See what is owed to you, what you owe, and the net
