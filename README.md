@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/owed-logo.png" width="128" alt="Owed">
+  <img src="docs/owed-banner-og.png" alt="Owed. Track what you lend and borrow." width="100%">
 </p>
 
 # Owed
